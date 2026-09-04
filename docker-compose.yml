@@ -1,6 +1,6 @@
 services:
   ikev2:
-    image: ghcr.io/jmcat999/ikev2:latest
+    image: ghcr.io/marmieqi/ikev2:latest
     pull_policy: always
     container_name: ikev2-mschapv2
     restart: unless-stopped

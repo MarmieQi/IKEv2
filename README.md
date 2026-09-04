@@ -133,12 +133,12 @@ ip xfrm policy
 mkdir -p /vol1/1000/docker/ikev2
 cd /vol1/1000/docker/ikev2
 
-git clone https://github.com/jmcat999/IKEv2.git .
+git clone https://github.com/MarmieQi/IKEv2.git .
 ```
 
 克隆完成后，仓库已经包含带注释示例的 `config/users.txt`。
 
-容器镜像由 GitHub Actions 构建并发布为 `ghcr.io/jmcat999/ikev2:latest`。部署机只会拉取镜像，不会在本地执行 Dockerfile 构建。
+容器镜像由 GitHub Actions 构建并发布为 `ghcr.io/marmieqi/ikev2:latest`。部署机只会拉取镜像，不会在本地执行 Dockerfile 构建。
 
 复制并编辑 `.env`：
 
@@ -400,6 +400,8 @@ VPN 类型：IKEv2
 
 服务端会优先协商 AES/SHA-256/MODP2048 或更强算法，并保留 Windows 10/11 原生 IKEv2 默认算法所需的回退提案。
 
+为避免 Windows 客户端位于 NAT 后时不响应服务端主动发起的 CHILD_SA 重协商，本项目禁用服务端的 CHILD_SA 定时重协商，由 Windows 客户端按自身策略发起。IKE SA 仍会正常定时重协商，并将 MODP2048 放在服务端首选位置以兼容 Windows。
+
 参考：[Microsoft Windows IKEv2 默认加密设置](https://learn.microsoft.com/windows/security/operating-system-security/network-security/vpn/how-to-configure-diffie-hellman-protocol-over-ikev2-vpn-connections)、[strongSwan Windows 客户端互操作文档](https://docs.strongswan.org/docs/latest/interop/windowsClients.html)。
 
 ---
@@ -655,6 +657,29 @@ PROXYARP_VPN_POOL 没有和 DHCP 地址池冲突
 PROXYARP_VPN_POOL 没有和已有设备 IP 冲突
 客户端所在地网络没有和家里 LAN 网段重叠
 ```
+
+### 10. Windows 连接一段时间后自动断开
+
+如果日志出现：
+
+```text
+creating rekey job for CHILD_SA
+generating CREATE_CHILD_SA request
+retransmit 1 of request
+...
+giving up after 5 retransmits
+lease ... went offline
+```
+
+说明服务端主动发起 CHILD_SA 重协商后没有收到 Windows 响应。strongSwan 官方指出，位于 NAT 后的 Windows 客户端可能不接受服务端主动发起的 CHILD_SA 重协商。
+
+本项目已按官方建议设置：
+
+```text
+rekey_time = 0
+```
+
+这只禁用服务端主动发起 CHILD_SA 重协商，Windows 客户端仍可主动发起重协商。更新镜像并重启容器后，可在启动日志的“关键 swanctl 配置”中确认该设置已经加载。
 
 ---
 

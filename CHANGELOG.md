@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### 修复
+
+- 修复 Windows 原生 IKEv2 客户端长时间连接后可能断开的问题。
+- 禁用服务端主动发起 CHILD_SA 定时重协商，由 Windows 客户端发起，避免 NAT 后的 Windows 不响应而触发重传超时。
+- 将 MODP2048 调整为 IKE proposal 的首选 DH 组，兼容 Windows 的服务端 IKE SA 重协商要求。
+- 启动日志增加 `rekey_time` 关键配置输出，方便确认修复已经加载。
+- 更新账号改名后的 GitHub 仓库和 GHCR 镜像地址为 `MarmieQi/IKEv2` 与 `ghcr.io/marmieqi/ikev2`。
+
 ## v1.2.0 - Official Proxy ARP Mode Release
 
 将当前版本作为正式版。

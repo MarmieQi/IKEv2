@@ -164,7 +164,8 @@ connections {
 
         pools = vpn-pool
 
-        proposals = aes256-sha256-modp4096,aes256-sha256-modp2048,aes128-sha256-modp2048,aes256-sha256-modp1024,aes256-sha1-modp1024,aes128-sha1-modp1024,3des-sha1-modp1024
+        # Windows requires MODP2048 in the first proposal when the gateway initiates IKE rekeying.
+        proposals = aes256-sha256-modp2048,aes256-sha256-modp4096,aes128-sha256-modp2048,aes256-sha256-modp1024,aes256-sha1-modp1024,aes128-sha1-modp1024,3des-sha1-modp1024
 
         local {
             auth = pubkey
@@ -181,6 +182,9 @@ connections {
             net {
                 local_ts = $VPN_LOCAL_TS
                 esp_proposals = aes256-sha256,aes128-sha256,aes256-sha1,aes128-sha1,3des-sha1
+                # Windows clients behind NAT may not answer gateway-initiated CHILD_SA rekeying.
+                # Let the client initiate CHILD_SA rekeying instead.
+                rekey_time = 0
                 dpd_action = clear
                 start_action = none
             }
@@ -284,7 +288,7 @@ openssl x509 -in /etc/swanctl/x509/cert.pem -noout -subject -issuer -dates -ext 
 generate_swanctl_config
 
 echo "关键 swanctl 配置:"
-grep -E 'send_cert|send_certreq|mobike|fragmentation|proposals|eap_id|local_ts|dns =|secrets|eap-user-' /etc/swanctl/swanctl.conf || true
+grep -E 'send_cert|send_certreq|mobike|fragmentation|proposals|eap_id|local_ts|rekey_time|dns =|secrets|eap-user-' /etc/swanctl/swanctl.conf || true
 
 sysctl -w net.ipv4.ip_forward=1 || true
 
