@@ -400,7 +400,7 @@ VPN 类型：IKEv2
 
 服务端会优先协商 AES/SHA-256/MODP2048 或更强算法，并保留 Windows 10/11 原生 IKEv2 默认算法所需的回退提案。
 
-为避免 Windows 客户端位于 NAT 后时不响应服务端主动发起的 CHILD_SA 重协商，本项目禁用服务端的 CHILD_SA 定时重协商，由 Windows 客户端按自身策略发起。IKE SA 仍会正常定时重协商，并将 MODP2048 放在服务端首选位置以兼容 Windows。
+为避免 Windows 客户端位于 NAT 后时不响应服务端主动发起的重协商，本项目禁用服务端的 CHILD_SA 与 IKE SA 定时重协商，两者都由 Windows 客户端按自身策略发起。日志显示即使 IKE SA 重协商本身能协商成功，Windows 也不响应重协商完成后对旧 IKE SA 的删除，会话仍会被服务端销毁，因此服务端发起的 IKE 重协商不能保留。MODP2048 仍放在服务端首选位置以保持协商兼容。
 
 参考：[Microsoft Windows IKEv2 默认加密设置](https://learn.microsoft.com/windows/security/operating-system-security/network-security/vpn/how-to-configure-diffie-hellman-protocol-over-ikev2-vpn-connections)、[strongSwan Windows 客户端互操作文档](https://docs.strongswan.org/docs/latest/interop/windowsClients.html)。
 
@@ -673,13 +673,13 @@ lease ... went offline
 
 说明服务端主动发起 CHILD_SA 重协商后没有收到 Windows 响应。strongSwan 官方指出，位于 NAT 后的 Windows 客户端可能不接受服务端主动发起的 CHILD_SA 重协商。
 
-本项目已按官方建议设置：
+本项目已按官方建议在 CHILD_SA 和 IKE SA 两层都设置：
 
 ```text
 rekey_time = 0
 ```
 
-这只禁用服务端主动发起 CHILD_SA 重协商，Windows 客户端仍可主动发起重协商。更新镜像并重启容器后，可在启动日志的“关键 swanctl 配置”中确认该设置已经加载。
+这禁用服务端主动发起的两类定时重协商，Windows 客户端仍会按自身策略主动发起重协商。更新镜像并重启容器后，可在启动日志的“关键 swanctl 配置”中确认该设置已经加载。
 
 ---
 

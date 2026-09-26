@@ -162,6 +162,11 @@ connections {
         mobike = yes
         unique = never
 
+        # Windows behind NAT answers the gateway-initiated IKE SA rekey itself but
+        # not the deletion of the old IKE SA that follows, so the session still dies
+        # after rekeying. Let the Windows client initiate IKE SA rekeying instead.
+        rekey_time = 0
+
         pools = vpn-pool
 
         # Windows requires MODP2048 in the first proposal when the gateway initiates IKE rekeying.
