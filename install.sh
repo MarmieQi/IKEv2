@@ -10,24 +10,13 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-if [ ! -f config/users.txt ]; then
-  echo "错误：找不到 config/users.txt，请重新克隆完整项目。"
-  exit 1
-fi
+source scripts/lib/runtime-config.sh
+source scripts/lib/users.sh
+source scripts/lib/network-config.sh
+runtime_config_load .env
+users_load "${VPN_USERS_FILE:-config/users.txt}"
+network_config_resolve
 
-if ! grep -Eq '^[^#[:space:]][^:]*:.+' config/users.txt; then
-  echo "错误：config/users.txt 还没有有效账号。"
-  echo "请按 用户名:密码 格式填写，示例见文件内注释。"
-  exit 1
-fi
-
-read_env_value() {
-  local key="$1"
-  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); sub(/\r$/, ""); print; exit }' .env
-}
-
-VPN_CERT_FILE="${VPN_CERT_FILE:-$(read_env_value VPN_CERT_FILE)}"
-VPN_KEY_FILE="${VPN_KEY_FILE:-$(read_env_value VPN_KEY_FILE)}"
 VPN_CERT_FILE="${VPN_CERT_FILE:-server.crt}"
 VPN_KEY_FILE="${VPN_KEY_FILE:-server.key}"
 
@@ -44,7 +33,8 @@ if [ ! -f "ssl/$VPN_KEY_FILE" ]; then
 fi
 
 chmod 600 "ssl/$VPN_KEY_FILE" || true
-chmod 600 config/users.txt || true
+chmod 600 .env
+if [ -f config/users.txt ]; then chmod 600 config/users.txt; fi
 
 echo "加载宿主机 IPsec/XFRM 模块..."
 modprobe xfrm_user || true
@@ -85,5 +75,5 @@ echo "安卓填写："
 echo "  类型：IKEv2/IPSec MSCHAPv2"
 echo "  服务器地址：.env 里的 VPN_DOMAIN"
 echo "  IPSec 标识符：.env 里的 VPN_DOMAIN"
-echo "  用户名：config/users.txt 里的用户名"
-echo "  密码：config/users.txt 对应用户的密码"
+echo "  用户名：.env 的 USER_编号_NAME（旧账号文件仍兼容）"
+echo "  密码：.env 的 USER_编号_PASSWORD"

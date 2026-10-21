@@ -4,7 +4,7 @@ set -euo pipefail
 if [[ "${1:-}" != --isolated ]]; then
     exec unshare --net bash "$0" --isolated
 fi
-source "$(dirname "$0")/../lib/proxyarp.sh"
+source "$(dirname "$0")/../scripts/lib/proxyarp.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 expect_route() {
@@ -109,7 +109,7 @@ if bash -e -c '
         command ip "$@"
     }
     proxyarp_gateway_apply 192.168.0.200/29 192.168.0.0/24 192.168.0.3
-' bash "$(dirname "$0")/../lib/proxyarp.sh"; then
+' bash "$(dirname "$0")/../scripts/lib/proxyarp.sh"; then
     fail 'injected failure unexpectedly succeeded'
 fi
 [[ -z "$(ip -4 route show table 20162 2>/dev/null)" ]] || fail 'failed startup left routes'

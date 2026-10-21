@@ -1,219 +1,40 @@
 # IKEv2 Docker
 
-这是一个基于 **Debian + strongSwan + swanctl** 的 Docker IKEv2/IPSec 服务端项目，目标是部署安卓/Windows 原生可用的：
+基于 Debian 12、strongSwan 的 IKEv2/IPSec 服务端，使用 EAP-MSCHAPv2 用户认证，支持 Windows / Android 客户端。
 
-```text
-IKEv2/IPSec MSCHAPv2
-```
+日常只维护 **`.env` 和 `ssl/`**：域名、网络和用户账号集中在 `.env`，证书单独存放。修改配置后重启容器生效。
 
-当前已验证：
+## 首次部署
 
-```text
-IKEv2 SA ESTABLISHED
-CHILD_SA INSTALLED
-TUNNEL-in-UDP
-EAP-MSCHAPv2 用户认证成功
-真实流量 in/out 正常
-```
-
----
-
-## 核心变化
-
-账号不再写在 `.env` 里。
-
-本项目现在统一使用：
-
-```text
-config/users.txt
-```
-
-作为 VPN 账号文件。每行一个账号：
-
-```text
-用户名:密码
-```
-
-仓库默认提供带注释说明的 `config/users.txt`。填写真实账号后，不要将该文件的改动提交到 GitHub。
-
----
-
-## 两种运行模式
-
-项目支持两种互相独立的运行模式：
-
-```text
-nat       默认模式，VPN 客户端使用独立网段，例如 10.66.0.0/24，并通过 NAT 访问内网/外网。
-proxyarp  高级模式，VPN 客户端使用局域网同网段 IP，例如 192.168.0.240/28，不做 NAT，通过 Proxy ARP 暴露给 LAN。
-```
-
-启动脚本会根据 `.env` 里的：
-
-```env
-VPN_MODE=nat
-# 或
-VPN_MODE=proxyarp
-```
-
-启动脚本根据 `VPN_MODE` 计算地址池、DNS、流量选择器和防火墙规则，并直接生成 strongSwan 运行配置。
-
----
-
-## 目录结构
-
-推荐部署目录：
-
-```text
-/vol1/1000/docker/ikev2
-├── ssl                # 唯一证书目录
-│   ├── server.crt     # 默认 fullchain，服务器证书 + 中间证书
-│   └── server.key     # 默认私钥
-├── config
-│   └── users.txt       # 本地 VPN 账号文件，不提交 GitHub
-├── start.sh            # 容器启动和运行配置生成脚本
-├── strongswan.conf     # strongSwan 静态配置
-├── docker-compose.yml
-├── Dockerfile
-├── install.sh
-├── .env.example
-└── README.md
-```
-
-证书要求：
-
-```text
-ssl/$VPN_CERT_FILE 必须是 fullchain
-ssl/$VPN_KEY_FILE 必须和证书匹配
-证书 SAN 必须包含 VPN_DOMAIN，例如 DNS:vpn.example.com
-证书 EKU 需要包含 TLS Web Server Authentication
-```
-
-证书文件名由 `.env` 中的 `VPN_CERT_FILE` 和 `VPN_KEY_FILE` 指定，默认是：
-
-```env
-VPN_CERT_FILE=server.crt
-VPN_KEY_FILE=server.key
-```
-
-本项目启动脚本会自动把配置的 fullchain 拆分为：
-
-```text
-服务器证书 -> /etc/swanctl/x509/cert.pem
-中间证书 -> /etc/swanctl/x509ca/chain-01.pem
-```
-
----
-
-## 前提条件
-
-宿主机必须支持 Linux XFRM/IPsec：
+宿主机需安装 Docker 和 Docker Compose，并支持 Linux XFRM/IPsec。路由器将 UDP 500、4500 转发到宿主机；域名指向入口公网地址。
 
 ```bash
-modprobe xfrm_user
-modprobe xfrm_interface
-modprobe esp4
-modprobe esp6
-modprobe xfrm_algo
-
-ip xfrm state
-ip xfrm policy
-```
-
-`ip xfrm state` 和 `ip xfrm policy` 不报错即可。
-
-部分内核没有启用 `CONFIG_XFRM_STATISTICS`，所以 `/proc/net/xfrm_stat` 不存在不一定是问题。
-
----
-
-## 从零部署
-
-在 NAS 或 Linux 宿主机执行：
-
-```bash
-mkdir -p /vol1/1000/docker/ikev2
-cd /vol1/1000/docker/ikev2
-
-git clone https://github.com/MarmieQi/IKEv2.git .
-```
-
-克隆完成后，仓库已经包含带注释示例的 `config/users.txt`。
-
-容器镜像由 GitHub Actions 构建并发布为 `ghcr.io/marmieqi/ikev2:latest`。部署机只会拉取镜像，不会在本地执行 Dockerfile 构建。
-
-复制并编辑 `.env`：
-
-```bash
+git clone https://github.com/MarmieQi/IKEv2.git
+cd IKEv2
 cp .env.example .env
-nano .env
-```
-
-默认 NAT 模式配置：
-
-```env
-VPN_MODE=nat
-VPN_DOMAIN=vpn.example.com
-
-NAT_VPN_POOL=10.66.0.0/24
-NAT_DNS1=1.1.1.1
-NAT_DNS2=8.8.8.8
-# NAT_LOCAL_TS=0.0.0.0/0
-```
-
-填写账号文件：
-
-```bash
-nano config/users.txt
-chmod 600 config/users.txt
-```
-
-默认文件只有注释示例；未填写至少一个有效账号时，`install.sh` 会停止部署。
-
-账号文件就是账号和密码，两项之间用英文冒号 `:` 分隔：
-
-```text
-# 用户名:密码
-user1:password1
-user2:password2
-user3:password3
-```
-
-放证书：
-
-```bash
 mkdir -p ssl
 ```
 
-```text
-/vol1/1000/docker/ikev2/ssl/server.crt
-/vol1/1000/docker/ikev2/ssl/server.key
-```
-
-如果证书文件名不同，只需修改 `.env`：
-
-```env
-VPN_CERT_FILE=my-vpn.crt
-VPN_KEY_FILE=my-vpn.key
-```
-
-启动：
+编辑 `.env`，按注释填写域名、模式和至少一组用户。证书放入 `ssl/server.crt`（fullchain）及 `ssl/server.key`；文件名可在 `.env` 修改。
+证书 SAN 必须包含 VPN 域名，EKU 应包含 TLS Web Server Authentication。
 
 ```bash
-chmod +x install.sh
-./install.sh
+chmod 600 .env ssl/server.key
+sudo bash install.sh
 ```
 
-## 修改配置与更新
+## 修改配置
 
-修改 `.env` 中的 VPN 模式、网关、DNS、地址池、域名或证书文件名后，直接重启：
+编辑 `.env` 后执行：
 
 ```bash
 docker compose restart
 ```
 
-也可以在 NAS 的 Docker 管理界面重启容器。启动日志应出现 `已读取运行配置`。
-修改账号或证书后同样重启，并让 VPN 客户端断开重连。
+NAS 界面点击“重启容器”也可以。修改账号或证书后同样重启，VPN 客户端需要重新连接。
+Compose 的挂载、网络等容器创建参数发生变化时，仍需 `docker compose up -d --force-recreate`。
 
-首次从旧版本升级，需要在部署目录执行一次：
+## 更新程序
 
 ```bash
 git pull --ff-only
@@ -221,579 +42,100 @@ docker compose pull
 docker compose up -d --force-recreate --pull never
 ```
 
-这一步同时升级镜像和配置挂载；旧容器仅重启无法获得新挂载。以后修改 `.env` 只需重启。
-后续程序更新仍使用 `git pull --ff-only`、`docker compose pull` 和 `docker compose up -d`。
-Compose 自身的挂载、网络等配置变更仍需要重新创建容器。
+程序来自镜像；仅 `git pull` 或重启容器不会安装新镜像。构建由 GitHub Actions 自动完成，发布到 `ghcr.io/marmieqi/ikev2:latest`。
 
-`.env` 每次启动时由 `lib/runtime-config.sh` 读取，覆盖容器创建时的旧 VPN 环境变量；
-删除或注释某项会恢复默认行为，例如注释 `PROXYARP_GATEWAY` 后恢复宿主机原有路由。
-支持 `KEY=VALUE`、空行、注释、Windows 换行、单/双引号和空白后的行尾注释。
-值按字面读取，不支持 `${变量}` 插值、命令替换、转义引号或多行值；其他 Compose 变量不会导入 VPN 进程。
-配置格式错误或文件缺失时停止启动，避免悄悄使用旧配置。
+## 旧配置迁移
 
-Compose 只读挂载部署目录，使编辑器通过替换文件保存 `.env` 后也能读取新内容；
-运行代码仍使用镜像内版本。账号目录单独挂载到 `/etc/ikev2`。
-自行使用 `docker run` 部署时，如果不设置 `IKEV2_CONFIG_FILE`，仍可通过环境变量配置；
-设置该变量时必须挂载对应配置文件所在目录。
+旧 `.env` 参数和 `config/users.txt` 仍兼容，可以先更新镜像，不必立即改配置。
+要合并为一份带完整注释的 `.env`，更新代码后在部署目录执行：
 
----
-
-## 多账号配置
-
-`config/users.txt` 是唯一账号来源。
-
-格式：
-
-```text
-用户名:密码
+```bash
+bash scripts/migrate-config.sh
 ```
 
-也就是：
+脚本将当前生效的 DNS、路由、地址池、网关和账号写入新格式，并先备份旧 `.env` 为 `.env.backup.*`。
+原账号文件不自动删除；确认新配置及账号正常后，清空旧 `config/users.txt` 中的有效账号，避免以后删除所有 `USER_*` 时恢复旧账号。
+迁移时把当前模式的 DNS 和路由保留为公共设置；以后切换模式仍使用这组公共设置。
+更新镜像后重建一次容器，以后修改配置继续只需重启。不要直接用模板覆盖已有 `.env`。
 
-```text
-账号:密码
-```
+## 配置示例
 
-规则：
-
-```text
-每行一个账号
-空行会被忽略
-# 开头的注释行会被忽略
-用户名不能为空
-密码不能为空
-密码里可以包含冒号，脚本只按第一个冒号切分用户名和密码
-```
-
-示例：
-
-```text
-user1:password1
-user2:password2
-user3:password3
-```
-
-如果只需要一个账号，只写一行即可：
-
-```text
-user1:password1
-```
-
-启动脚本会自动生成 strongSwan `swanctl.conf` 里的：
-
-```text
-secrets {
-    eap-user-1 { ... }
-    eap-user-2 { ... }
-    eap-user-3 { ... }
-}
-```
-
-然后通过 `swanctl --load-all` 加载。
-
-注意：
-
-```text
-config/users.txt 包含明文密码
-仓库中的 config/users.txt 默认只有注释示例
-填写真实账号后，不要把改动提交到 GitHub
-```
-
----
-
-## NAT 模式
-
-适合普通远程访问，推荐默认使用。
-
-`.env` 示例：
+完整注释见 [.env.example](.env.example)，详细规则与旧参数映射见 [配置说明](docs/configuration.md)。
+以下为 Proxy ARP 通过同局域网旁路由上网的示例，域名及账号需要替换：
 
 ```env
-VPN_MODE=nat
 VPN_DOMAIN=vpn.example.com
-
-NAT_VPN_POOL=10.66.0.0/24
-NAT_DNS1=1.1.1.1
-NAT_DNS2=8.8.8.8
-# NAT_LOCAL_TS=0.0.0.0/0
-```
-
-特点：
-
-```text
-VPN 客户端拿 10.66.0.x
-容器自动做 MASQUERADE/NAT
-VPN 客户端可以访问部署 IKEv2 这台机器自己的所有服务
-不需要修改主路由静态路由
-最稳定，不容易和局域网 DHCP 冲突
-```
-
----
-
-## Proxy ARP 同网段模式
-
-高级模式，让 VPN 客户端拿局域网同网段 IP。
-
-假设局域网是：
-
-```text
-路由器：192.168.0.1
-FnNas：192.168.0.2
-LAN：192.168.0.0/24
-```
-
-建议在主路由 DHCP 里预留一小段不分配，例如：
-
-```text
-192.168.0.240 - 192.168.0.254
-```
-
-`.env` 示例：
-
-```env
 VPN_MODE=proxyarp
-VPN_DOMAIN=vpn.example.com
+VPN_CERT_FILE=server.crt
+VPN_KEY_FILE=server.key
 
-# 二选一：CIDR 网段
-PROXYARP_VPN_POOL=192.168.0.240/28
+VPN_DNS=218.6.200.139,61.139.2.69
+VPN_ROUTES=0.0.0.0/0
 
-# 或者使用连续 IP 范围
-# PROXYARP_VPN_POOL=192.168.0.200-192.168.0.210
+PROXYARP_POOL=192.168.0.201-192.168.0.210
+PROXYARP_LAN=192.168.0.0/24
+PROXYARP_GATEWAY=192.168.0.4
 
-# PROXYARP_LAN_SUBNET=192.168.0.0/24
-# PROXYARP_LOCAL_TS=192.168.0.0/24
-# PROXYARP_DNS1=192.168.0.1
-# PROXYARP_DNS2=1.1.1.1
+USER_1_NAME=user1
+USER_1_PASSWORD='replace-with-your-password'
 ```
 
-`PROXYARP_VPN_POOL` 只接受一个 CIDR 网段，或一个“起始 IP-结束 IP”连续范围。不支持多个网段、逗号列表或带空格的值。
+Proxy ARP 地址池需排除 DHCP 和已有设备，不能包含 LAN 网络地址或广播地址。旁路由需支持转发及出口 NAT/回程。
+客户端访问 LAN 仍直连，非 LAN 的 VPN 流量交给旁路由；宿主机默认网关不变。
+`VPN_ROUTES=0.0.0.0/0` 允许全部 IPv4 目标进入隧道，客户端也必须开启全隧道。
 
-特点：
+## 客户端
 
-```text
-VPN 客户端拿 192.168.0.240/28 里的地址
-不做 MASQUERADE/NAT
-宿主机开启 Proxy ARP
-局域网设备可以看到 VPN 客户端同网段源 IP
-VPN 客户端可以访问部署 IKEv2 这台机器自己的所有服务
-```
-
-安全要求：
-
-```text
-不要使用整个 192.168.0.0/24 作为 PROXYARP_VPN_POOL
-PROXYARP_VPN_POOL 必须避开主路由 DHCP 地址池
-PROXYARP_VPN_POOL 必须避开已有设备 IP
-如果客户端所在地网络也是 192.168.0.0/24，可能发生路由冲突
-```
-
-### 可选：通过同局域网旁路由上网
-
-例如 IKEv2 宿主机为 `192.168.0.2`，旁路由为 `192.168.0.3`，可以配置：
-
-```env
-VPN_MODE=proxyarp
-PROXYARP_VPN_POOL=192.168.0.200-192.168.0.210
-PROXYARP_LAN_SUBNET=192.168.0.0/24
-PROXYARP_GATEWAY=192.168.0.3
-PROXYARP_LOCAL_TS=0.0.0.0/0
-PROXYARP_DNS1=192.168.0.1
-```
-
-此时 VPN 客户端访问 LAN 仍直接转发，非 LAN 的 IPv4 流量交给旁路由；宿主机自己的默认网关不变。
-`PROXYARP_GATEWAY` 留空时使用宿主机原有路由。它不改变 DNS、流量选择器或客户端路由；
-默认只隧道传输 LAN 流量，因此公网流量还需要显式设置 `PROXYARP_LOCAL_TS=0.0.0.0/0`，并在客户端启用全隧道。
-Windows 可在管理员 PowerShell 执行（替换连接名称）：
+- Android：选择 IKEv2/IPSec MSCHAPv2，服务器及 IPSec 标识符填写 `VPN_DOMAIN`，使用 `.env` 中的账号密码。
+- Windows：添加 IKEv2 连接，使用用户名和密码登录。需要全局上网时在管理员 PowerShell 执行：
 
 ```powershell
 Set-VpnConnection -Name "你的 VPN 连接名称" -SplitTunneling $false
 ```
 
-前置条件：
-
-- 网关必须是宿主机直接可达的 LAN IPv4 地址，不能是宿主机自身，也不能在 VPN 地址池内。
-- 地址池必须完全位于 LAN 内，避开 DHCP、已有设备及 LAN 网络地址和广播地址。
-  例如 LAN 为 `/24` 时，不要在启用网关功能时使用包含 `.255` 的 `192.168.0.240/28`；可使用上面的明确范围或 `192.168.0.240/29`。
-- 旁路由必须开启 IP 转发，允许 VPN 地址池转发，并配置上网 NAT 或等效的上游回程。
-  本项目在 Proxy ARP 模式下不做出口 NAT；旁路由应将 VPN 地址池视为 LAN 客户端。
-- 镜像显式加载 `farp`，代答在线 VPN 客户端的 ARP，使旁路由和其他 LAN 设备的回包进入 VPN 服务器。
-  旁路由不能再把这些客户端的回包送向自己的默认出口，也不能配置回到 VPN 服务器的公网默认路由而造成循环。
-- 仅支持 IPv4。客户端所在网络与家里网段重叠的路由冲突仍需单独解决。
-
-实现集中在 `lib/proxyarp.sh`，启动脚本只调用模块接口。
-模块按 VPN 地址池生成精确的源地址规则，使用专用路由表 `20162`、协议标记 `186` 和规则优先级 `219`
-（先于 strongSwan 默认的 `220` 规则，晚于本机地址规则）。这些编号供本项目保留；检测到其他规则或路由占用时启动失败。
-自定义宿主机策略路由时，请检查更高优先级的规则是否会抢先匹配。
-模块不更改 strongSwan 的 `220` 表。正常停止和下次启动时仅清理带有本模块表号及协议标记的路由和规则；
-强制终止后，下次启动会清理残留。为避免同网卡转发产生 ICMP 重定向，还会关闭宿主机 `all` 和网关所在网卡的
-`send_redirects`；停止时保留这一设置，其他服务若依赖它需自行协调。
-
-检查配置（将 IP 换为实际在线客户端地址）：
+## 查看运行情况
 
 ```bash
-docker logs ikev2-mschapv2 2>&1 | grep -E 'loaded plugins|Proxy ARP 网关'
-ip -4 rule show
-ip -4 route show table 20162
-ip -4 route show table 220
-ip -4 route get 1.1.1.1 from 192.168.0.200 iif eth0
+docker compose ps -a
+docker compose logs --tail=100
+docker compose logs -f --tail=50
+docker exec ikev2-mschapv2 swanctl --list-sas
 ```
 
-最后一条中的 `eth0` 替换为 VPN 解密流量进入的物理网卡。预期公网下一跳是旁路由，访问 LAN 走直连路由。
-还应从实际 VPN 客户端检查内网访问、DNS、公网出口及回包，并在重启、修改网关、关闭选项后检查旧规则已清理。
-完成上述首次升级后，修改 `.env` 使用 `docker compose restart` 应用。
+日志显示 `已读取运行配置`、`账号来源: .env`，表示新配置已加载；启用旁路由时会显示网关及 LAN 网卡。
+连接成功后应能看到 `IKE_SA ... established` 和 `CHILD_SA ... established`。日志中可能包含用户名和网络地址，分享前按需遮盖。
 
-开发验证可在有 root 权限并支持 network namespace 的 Linux 上执行：
+## 目录结构
+
+```text
+IKEv2/
+├── .env.example                 # 带注释的统一配置模板
+├── .env                         # 本地实际配置及账号，不进 Git
+├── docker-compose.yml           # 容器部署
+├── Dockerfile                   # 镜像构建及实际解析测试
+├── install.sh                   # 首次部署入口
+├── scripts/
+│   ├── start.sh                 # 容器启动与生命周期
+│   ├── migrate-config.sh        # 旧配置合并及备份
+│   └── lib/
+│       ├── runtime-config.sh    # .env 解析与配置项检查
+│       ├── network-config.sh    # 模式、默认值和旧参数归一化
+│       ├── users.sh             # 统一账号读取及认证配置
+│       ├── strongswan.sh        # 生成连接配置
+│       └── proxyarp.sh          # ARP 与旁路由策略路由
+├── config/
+│   ├── strongswan.conf          # 镜像内部静态配置
+│   └── users.txt                # 仅为旧部署兼容保留
+├── ssl/                         # 本地证书与私钥，不进 Git
+├── docs/configuration.md        # 参数、默认值及兼容规则
+└── tests/                       # 配置、迁移、路由和实际解析测试
+```
+
+## 开发验证
 
 ```bash
-bash tests/proxyarp-routing.sh
-bash tests/runtime-config.sh
+sudo bash tests/run.sh
 ```
 
-测试在独立网络命名空间中检查路由选择、范围边界、配置校验、资源冲突、重启和清理，不改宿主机网络；
-它不代替实际 IKEv2 客户端和旁路由的连通性验证。
-
-配置依据：[strongSwan 转发与分流](https://docs.strongswan.org/docs/5.9/howtos/forwarding.html)、
-[farp 插件](https://docs.strongswan.org/docs/5.9/plugins/farp.html)、
-[Linux ip-rule](https://man7.org/linux/man-pages/man8/ip-rule.8.html)、
-[Linux ip-route](https://man7.org/linux/man-pages/man8/ip-route.8.html)。
-
----
-
-## 安卓配置
-
-VPN 类型：
-
-```text
-IKEv2/IPSec MSCHAPv2
-```
-
-填写：
-
-```text
-服务器地址：vpn.example.com
-IPSec 标识符：vpn.example.com
-用户名：config/users.txt 里的用户名
-密码：config/users.txt 对应用户的密码
-```
-
-注意：
-
-```text
-服务器地址和 IPSec 标识符必须和证书域名一致
-不要填写 IP
-不要选择 PSK
-不要填写预共享密钥
-```
-
----
-
-## Windows 配置
-
-使用 Windows 系统自带的 VPN 客户端，不需要修改注册表，也不需要运行 PowerShell 设置算法。
-
-打开“设置 → 网络和 Internet → VPN → 添加 VPN”，填写：
-
-```text
-VPN 提供商：Windows（内置）
-连接名称：IKEv2 VPN
-服务器名称或地址：vpn.example.com
-VPN 类型：IKEv2
-登录信息的类型：用户名和密码
-用户名：config/users.txt 里的用户名
-密码：config/users.txt 对应用户的密码
-```
-
-服务端会优先协商 AES/SHA-256/MODP2048 或更强算法，并保留 Windows 10/11 原生 IKEv2 默认算法所需的回退提案。
-
-为避免 Windows 客户端位于 NAT 后时不响应服务端主动发起的重协商，本项目禁用服务端的 CHILD_SA 与 IKE SA 定时重协商，两者都由 Windows 客户端按自身策略发起。日志显示即使 IKE SA 重协商本身能协商成功，Windows 也不响应重协商完成后对旧 IKE SA 的删除，会话仍会被服务端销毁，因此服务端发起的 IKE 重协商不能保留。MODP2048 仍放在服务端首选位置以保持协商兼容。
-
-参考：[Microsoft Windows IKEv2 默认加密设置](https://learn.microsoft.com/windows/security/operating-system-security/network-security/vpn/how-to-configure-diffie-hellman-protocol-over-ikev2-vpn-connections)、[strongSwan Windows 客户端互操作文档](https://docs.strongswan.org/docs/latest/interop/windowsClients.html)。
-
----
-
-## 端口转发
-
-上级路由器需要把下面端口转发到 FnNas：
-
-```text
-UDP 500
-UDP 4500
-```
-
----
-
-## 查看日志
-
-```bash
-docker logs -f ikev2-mschapv2
-```
-
-启动成功时应看到类似：
-
-```text
-运行模式: nat
-VPN_POOL: 10.66.0.0/24
-VPN_LOCAL_TS: 0.0.0.0/0
-VPN_USERS_FILE: /etc/ikev2/users.txt
-已加载 EAP 账号数量: 3
-允许 VPN 客户端访问本机服务: 10.66.0.0/24
-证书链数量: 2
-loaded certificate 'CN=vpn.example.com'
-loaded certificate 'C=US, O=DigiCert Inc ...'
-loaded EAP shared key with id 'user1'
-loaded connection 'ikev2-mschapv2'
-```
-
-Proxy ARP 模式应看到：
-
-```text
-运行模式: proxyarp
-VPN_POOL: 192.168.0.240/28
-LAN_SUBNET: 192.168.0.0/24
-允许 VPN 客户端访问本机服务: 192.168.0.240/28
-应用 Proxy ARP 模式防火墙规则: 不做 MASQUERADE
-```
-
----
-
-## 查看在线连接
-
-```bash
-docker exec -it ikev2-mschapv2 swanctl --list-sas
-```
-
-成功连接时应看到：
-
-```text
-ikev2-mschapv2: ESTABLISHED, IKEv2
-net: INSTALLED, TUNNEL-in-UDP
-remote 10.66.0.x/32
-in/out bytes 正常增长
-```
-
-Proxy ARP 模式则会看到：
-
-```text
-remote 192.168.0.24x/32
-```
-
----
-
-## 停止
-
-```bash
-docker compose down
-```
-
----
-
-## 更新
-
-```bash
-cd /vol1/1000/docker/ikev2
-
-git pull
-
-docker compose down
-docker compose pull
-docker compose up -d
-```
-
----
-
-## 常见问题
-
-### 1. `unable to create netlink socket`
-
-说明容器或宿主机无法访问 XFRM。检查：
-
-```bash
-modprobe xfrm_user
-modprobe xfrm_interface
-modprobe esp4
-modprobe esp6
-ip xfrm state
-```
-
-Docker 必须使用：
-
-```yaml
-network_mode: host
-privileged: true
-```
-
-### 2. `no shared key found`
-
-说明客户端选成了 PSK 模式。
-
-请改成：
-
-```text
-IKEv2/IPSec MSCHAPv2
-```
-
-不要选：
-
-```text
-IKEv2/IPSec PSK
-IPSec Xauth PSK
-```
-
-### 3. `loading EAP_MSCHAPV2 method failed`
-
-说明镜像缺少或未加载 `eap-mschapv2` 插件。
-
-GitHub 发布的镜像会安装并启用：
-
-```text
-libstrongswan-eap-mschapv2.so
-```
-
-检查：
-
-```bash
-docker exec -it ikev2-mschapv2 sh -c 'find /usr/lib /lib -name "*mschap*" 2>/dev/null'
-```
-
-### 4. 连接卡在 `EAP/REQ/ID`
-
-重点检查证书链。`ssl/$VPN_CERT_FILE` 必须是 fullchain，且脚本会拆分为服务器证书和中间证书。
-
-检查：
-
-```bash
-grep -c "BEGIN CERTIFICATE" "ssl/$VPN_CERT_FILE"
-openssl x509 -in "ssl/$VPN_CERT_FILE" -noout -subject -issuer -dates -ext subjectAltName -ext extendedKeyUsage
-```
-
-### 5. `找不到账号文件 /etc/ikev2/users.txt`
-
-说明默认的 `config/users.txt` 缺失，或者 `docker-compose.yml` 没有正确挂载。
-
-检查：
-
-```bash
-ls -l config/users.txt
-docker compose config | grep users.txt
-```
-
-重新填写：
-
-```bash
-nano config/users.txt
-chmod 600 config/users.txt
-```
-
-### 6. `账号文件存在无效行`
-
-说明 `config/users.txt` 里有一行不是 `用户名:密码` 格式。
-
-正确示例：
-
-```text
-user1:password1
-user2:password2
-```
-
-错误示例：
-
-```text
-user1
-:password1
-user1:
-```
-
-### 7. 能访问局域网其他设备，但不能访问 IKEv2 宿主机自己的服务
-
-访问局域网其他设备通常走 `FORWARD` 链；访问部署 IKEv2 这台机器自己的服务走 `INPUT` 链。
-
-本项目启动脚本会自动放行 VPN 地址池到本机服务：
-
-```text
-允许 VPN 客户端访问本机服务: <VPN_POOL>
-```
-
-如果仍然无法访问，检查服务是否只监听了 `127.0.0.1`：
-
-```bash
-ss -lntup
-```
-
-如果看到服务只监听：
-
-```text
-127.0.0.1:端口
-```
-
-需要把服务改成监听：
-
-```text
-0.0.0.0:端口
-```
-
-或者监听宿主机 LAN IP。
-
-如果服务是 Docker 容器，还要确认端口没有只绑定到 `127.0.0.1`。
-
-### 8. NAT 模式能连接但不能上网
-
-检查 IPv4 转发和 NAT：
-
-```bash
-sysctl net.ipv4.ip_forward
-iptables -t nat -S | grep 10.66
-```
-
-### 9. Proxy ARP 模式同网段不通
-
-检查：
-
-```bash
-cat /proc/sys/net/ipv4/conf/all/proxy_arp
-ip neigh show
-iptables -S FORWARD
-iptables -S INPUT
-```
-
-同时确认：
-
-```text
-PROXYARP_VPN_POOL 没有和 DHCP 地址池冲突
-PROXYARP_VPN_POOL 没有和已有设备 IP 冲突
-客户端所在地网络没有和家里 LAN 网段重叠
-```
-
-### 10. Windows 连接一段时间后自动断开
-
-如果日志出现：
-
-```text
-creating rekey job for CHILD_SA
-generating CREATE_CHILD_SA request
-retransmit 1 of request
-...
-giving up after 5 retransmits
-lease ... went offline
-```
-
-说明服务端主动发起 CHILD_SA 重协商后没有收到 Windows 响应。strongSwan 官方指出，位于 NAT 后的 Windows 客户端可能不接受服务端主动发起的 CHILD_SA 重协商。
-
-本项目已按官方建议在 CHILD_SA 和 IKE SA 两层都设置：
-
-```text
-rekey_time = 0
-```
-
-这禁用服务端主动发起的两类定时重协商，Windows 客户端仍会按自身策略主动发起重协商。更新镜像并重启容器后，可在启动日志的“关键 swanctl 配置”中确认该设置已经加载。
-
----
-
-## 已验证成功日志
-
-成功连接后示例：
-
-```text
-ikev2-mschapv2: ESTABLISHED, IKEv2
-remote 'vpn.example.com' @ x.x.x.x EAP: 'user1' [10.66.0.1]
-net: INSTALLED, TUNNEL-in-UDP
-in/out packets 正常增长
-```
+路由测试使用独立网络命名空间，不更改宿主机网络。镜像构建还会使用镜像内的 strongSwan 实际解析 NAT、Proxy ARP 和包含特殊字符的账号配置。
+这些检查不替代真实客户端、NAS 和旁路由的连通性测试。

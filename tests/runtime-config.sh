@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-source "$(dirname "$0")/../lib/runtime-config.sh"
+source "$(dirname "$0")/../scripts/lib/runtime-config.sh"
 test_dir="$(mktemp -d)"
 trap 'rm -rf -- "$test_dir"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -40,7 +40,8 @@ printf 'VPN_DOMAIN=$(touch %s/executed)\nVPN_CERT_FILE=${HOME}\n' "$test_dir" > 
 runtime_config_load "$test_dir/.env"
 [[ ! -e "$test_dir/executed" && "$VPN_CERT_FILE" == '${HOME}' ]] || fail 'executed config'
 [[ "$VPN_DOMAIN" == \$\(touch* ]] || fail 'expanded literal command'
-for invalid in 'VPN_MODE' 'VPN_DOMAIN="unterminated' "VPN_DOMAIN='unterminated"; do
+for invalid in 'VPN_MODE' 'VPN_DOMAIN="unterminated' "VPN_DOMAIN='unterminated" 'VPN_DNS=1.1.1.1
+VPN_DNS=8.8.8.8' 'PROXYARP_GATWAY=192.168.0.4' 'USER_0_NAME=x'; do
     printf '%s\n' "$invalid" > "$test_dir/.env"
     if runtime_config_load "$test_dir/.env"; then fail 'accepted malformed config'; fi
 done

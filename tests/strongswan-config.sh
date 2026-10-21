@@ -3,6 +3,9 @@
 # Exercise the same generator and includes used at runtime in both modes.
 set -euo pipefail
 source /usr/local/lib/ikev2/proxyarp.sh
+source /usr/local/lib/ikev2/users.sh
+source /usr/local/lib/ikev2/network-config.sh
+source /usr/local/lib/ikev2/strongswan.sh
 test_dir="$(mktemp -d)"
 trap 'rm -rf -- "$test_dir"; rm -f /etc/strongswan.d/ikev2-farp.conf' EXIT
 
@@ -26,8 +29,17 @@ if check_config > "$test_dir/regression-output" 2>&1; then
     echo 'FAIL: parser test accepted the known invalid dotted key' >&2
     exit 1
 fi
+users_add 'quoted"user' 'colon:# dollar:$ backslash:\ quote:"'
+VPN_DOMAIN=vpn.example.com
 for mode in nat proxyarp; do
     proxyarp_configure_farp "$mode"
     check_config
+    VPN_MODE="$mode"
+    unset VPN_DNS VPN_ROUTES
+    network_config_resolve
+    generate_swanctl_config
+    STRONGSWAN_CONF=/etc/swanctl/swanctl.conf check_config
 done
+generate_eap_secrets > "$test_dir/accounts.conf"
+STRONGSWAN_CONF="$test_dir/accounts.conf" check_config
 echo 'PASS: generated NAT and Proxy ARP settings parsed by the image strongSwan'
