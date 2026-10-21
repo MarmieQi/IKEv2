@@ -25,7 +25,7 @@ cleanup() {
 
 VPN_MODE="${VPN_MODE:-nat}"
 VPN_DOMAIN="${VPN_DOMAIN:?缺少 VPN_DOMAIN}"
-VPN_USERS_FILE="${VPN_USERS_FILE:-/etc/ikev2/users.txt}"
+VPN_USERS_FILE=/etc/ikev2/users.txt
 VPN_CERT_FILE="${VPN_CERT_FILE:-server.crt}"
 VPN_KEY_FILE="${VPN_KEY_FILE:-server.key}"
 VPN_CERT_PATH="/ssl/$VPN_CERT_FILE"
@@ -128,7 +128,7 @@ trap 'exit 143' TERM
 trap 'exit 130' INT
 
 echo "关键 swanctl 配置:"
-grep -E 'send_cert|send_certreq|mobike|fragmentation|proposals|eap_id|local_ts|rekey_time|dns =|secrets|eap-user-' /etc/swanctl/swanctl.conf || true
+grep -E 'send_cert|send_certreq|mobike|fragmentation|proposals|eap_id|local_ts|rekey_time|dns =|secrets|ntlm-user-' /etc/swanctl/swanctl.conf || true
 
 sysctl -w net.ipv4.ip_forward=1 || true
 

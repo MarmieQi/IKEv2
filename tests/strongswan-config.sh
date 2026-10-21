@@ -29,7 +29,8 @@ if check_config > "$test_dir/regression-output" 2>&1; then
     echo 'FAIL: parser test accepted the known invalid dotted key' >&2
     exit 1
 fi
-users_add 'quoted"user' 'colon:# dollar:$ backslash:\ quote:"'
+printf '%s\n' 'test.user:plain:colon:# dollar:$ backslash:\ quote:"' > "$test_dir/users.txt"
+users_load "$test_dir/users.txt"
 VPN_DOMAIN=vpn.example.com
 for mode in nat proxyarp; do
     proxyarp_configure_farp "$mode"
@@ -42,4 +43,4 @@ for mode in nat proxyarp; do
 done
 generate_eap_secrets > "$test_dir/accounts.conf"
 STRONGSWAN_CONF="$test_dir/accounts.conf" check_config
-echo 'PASS: generated NAT and Proxy ARP settings parsed by the image strongSwan'
+echo 'PASS: generated NAT, Proxy ARP and NTLM credentials parsed by the image strongSwan'

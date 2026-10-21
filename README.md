@@ -1,67 +1,34 @@
 # IKEv2 Docker
 
-基于 Debian 12、strongSwan 的 IKEv2/IPSec 服务端，使用 EAP-MSCHAPv2 用户认证，支持 Windows / Android 客户端。
+基于 Debian 12、strongSwan 的 IKEv2/IPSec 服务端，使用 EAP-MSCHAPv2 认证，支持 Windows / Android 客户端。
 
-日常只维护 **`.env` 和 `ssl/`**：域名、网络和用户账号集中在 `.env`，证书单独存放。修改配置后重启容器生效。
+日常只维护三处：`.env` 配置服务和网络，`config/users.txt` 管理账号，`ssl/` 放证书。修改后重启容器生效。
+账号可填写明文密码，容器启动时自动转换为 NT 哈希并写回账号文件。
 
 ## 首次部署
 
-宿主机需安装 Docker 和 Docker Compose，并支持 Linux XFRM/IPsec。路由器将 UDP 500、4500 转发到宿主机；域名指向入口公网地址。
+宿主机需安装 Docker 和 Docker Compose，并支持 Linux XFRM/IPsec。路由器将 UDP 500、4500 转发到宿主机，域名指向公网入口。
 
 ```bash
 git clone https://github.com/MarmieQi/IKEv2.git
 cd IKEv2
 cp .env.example .env
+cp config/users.example config/users.txt
 mkdir -p ssl
 ```
 
-编辑 `.env`，按注释填写域名、模式和至少一组用户。证书放入 `ssl/server.crt`（fullchain）及 `ssl/server.key`；文件名可在 `.env` 修改。
+按各文件注释填写配置和账号。证书放入 `ssl/server.crt`（fullchain）及 `ssl/server.key`；文件名可在 `.env` 修改。
 证书 SAN 必须包含 VPN 域名，EKU 应包含 TLS Web Server Authentication。
 
 ```bash
-chmod 600 .env ssl/server.key
+chmod 600 .env config/users.txt ssl/server.key
 sudo bash install.sh
 ```
 
-## 修改配置
-
-编辑 `.env` 后执行：
-
-```bash
-docker compose restart
-```
-
-NAS 界面点击“重启容器”也可以。修改账号或证书后同样重启，VPN 客户端需要重新连接。
-Compose 的挂载、网络等容器创建参数发生变化时，仍需 `docker compose up -d --force-recreate`。
-
-## 更新程序
-
-```bash
-git pull --ff-only
-docker compose pull
-docker compose up -d --force-recreate --pull never
-```
-
-程序来自镜像；仅 `git pull` 或重启容器不会安装新镜像。构建由 GitHub Actions 自动完成，发布到 `ghcr.io/marmieqi/ikev2:latest`。
-
-## 旧配置迁移
-
-旧 `.env` 参数和 `config/users.txt` 仍兼容，可以先更新镜像，不必立即改配置。
-要合并为一份带完整注释的 `.env`，更新代码后在部署目录执行：
-
-```bash
-bash scripts/migrate-config.sh
-```
-
-脚本将当前生效的 DNS、路由、地址池、网关和账号写入新格式，并先备份旧 `.env` 为 `.env.backup.*`。
-原账号文件不自动删除；确认新配置及账号正常后，清空旧 `config/users.txt` 中的有效账号，避免以后删除所有 `USER_*` 时恢复旧账号。
-迁移时把当前模式的 DNS 和路由保留为公共设置；以后切换模式仍使用这组公共设置。
-更新镜像后重建一次容器，以后修改配置继续只需重启。不要直接用模板覆盖已有 `.env`。
-
 ## 配置示例
 
-完整注释见 [.env.example](.env.example)，详细规则与旧参数映射见 [配置说明](docs/configuration.md)。
-以下为 Proxy ARP 通过同局域网旁路由上网的示例，域名及账号需要替换：
+完整注释见 [.env.example](.env.example)，参数说明见 [配置文档](docs/configuration.md)。
+以下为通过家里旁路由上网的示例，域名需替换：
 
 ```env
 VPN_DOMAIN=vpn.example.com
@@ -75,19 +42,62 @@ VPN_ROUTES=0.0.0.0/0
 PROXYARP_POOL=192.168.0.201-192.168.0.210
 PROXYARP_LAN=192.168.0.0/24
 PROXYARP_GATEWAY=192.168.0.4
-
-USER_1_NAME=user1
-USER_1_PASSWORD='replace-with-your-password'
 ```
 
-Proxy ARP 地址池需排除 DHCP 和已有设备，不能包含 LAN 网络地址或广播地址。旁路由需支持转发及出口 NAT/回程。
-客户端访问 LAN 仍直连，非 LAN 的 VPN 流量交给旁路由；宿主机默认网关不变。
+地址池需排除 DHCP 和已有设备，不能包含 LAN 网络地址/广播地址。旁路由需允许转发及出口 NAT/回程。
+客户端访问 LAN 仍直连，非 LAN 的 VPN 流量交给旁路由，宿主机默认网关不变。
 `VPN_ROUTES=0.0.0.0/0` 允许全部 IPv4 目标进入隧道，客户端也必须开启全隧道。
+
+## 用户账号
+
+编辑 `config/users.txt`，每行一个账号：
+
+```text
+alice:plain:你的密码
+bob:plain:另一个密码
+```
+
+启动或重启容器后，`plain` 行自动替换为 `用户名:nt:32位NT哈希`。客户端仍输入原始密码，不填写哈希。
+修改密码时将该用户整行改回 `用户名:plain:新密码`，然后重启。禁用/删除用户时注释或删除对应行，再重启。
+密码取第二个冒号后的全部内容，不要额外加引号。完整规则见 [账号模板](config/users.example)。
+
+这里使用 strongSwan 官方支持的 NT 哈希，即 `MD4(UTF-16LE(password))`，并通过 `ntlm` 凭据加载。
+这是哈希存储，不是可逆加密；NT 哈希仍是敏感凭据，文件权限为 `600`，不要上传或提交 Git。
+转换采用文件锁和原子替换；配置错误、转换失败或检测到并发编辑时不覆盖原文件，不生成明文备份。
+运行时生成的 strongSwan 配置也只包含哈希，不保存明文密码。
+
+## 修改配置
+
+修改 `.env`、账号或证书后执行：
+
+```bash
+docker compose restart
+```
+
+NAS 界面点“重启容器”也可以，客户端需要重新连接。
+`config/` 必须可写挂载，供启动脚本写回账号哈希；不要将账号文件单独只读挂载。
+Compose 的挂载、网络等容器创建参数发生变化时，仍需重新创建容器。
+
+## 更新程序
+
+```bash
+git pull --ff-only
+docker compose pull
+docker compose up -d --force-recreate --pull never
+```
+
+程序来自镜像，仅 `git pull` 或重启容器不会安装新镜像。
+GitHub Actions 构建并发布 `ghcr.io/marmieqi/ikev2:latest`。
+
+本版只支持新配置格式，不兼容旧参数和旧账号格式，也不提供自动迁移逻辑。
+旧部署升级前自行保存当前配置和账号，再按新模板填写 `.env` 和 `config/users.txt`，并更新镜像、重建容器一次。
+如果旧 `users.txt` 被 Git 跟踪且有本地修改，先将其备份并移出该路径，再执行 `git pull`，避免文件删除冲突。
+实际账号文件现在由 Git 忽略，仓库只包含 `users.example` 模板。
 
 ## 客户端
 
-- Android：选择 IKEv2/IPSec MSCHAPv2，服务器及 IPSec 标识符填写 `VPN_DOMAIN`，使用 `.env` 中的账号密码。
-- Windows：添加 IKEv2 连接，使用用户名和密码登录。需要全局上网时在管理员 PowerShell 执行：
+- Android：选择 IKEv2/IPSec MSCHAPv2，服务器及 IPSec 标识符填写 `VPN_DOMAIN`，使用账号文件中配置的用户名和原始密码。
+- Windows：添加 IKEv2 连接，使用用户名和密码登录。全局上网需在管理员 PowerShell 执行：
 
 ```powershell
 Set-VpnConnection -Name "你的 VPN 连接名称" -SplitTunneling $false
@@ -102,33 +112,33 @@ docker compose logs -f --tail=50
 docker exec ikev2-mschapv2 swanctl --list-sas
 ```
 
-日志显示 `已读取运行配置`、`账号来源: .env`，表示新配置已加载；启用旁路由时会显示网关及 LAN 网卡。
-连接成功后应能看到 `IKE_SA ... established` 和 `CHILD_SA ... established`。日志中可能包含用户名和网络地址，分享前按需遮盖。
+启动日志显示 `已读取运行配置`、`已加载账号数量`；启用旁路由时显示网关和 LAN 网卡。
+包含明文账号时会显示已转换并写回的提示。日志不打印密码或哈希。
 
 ## 目录结构
 
 ```text
 IKEv2/
-├── .env.example                 # 带注释的统一配置模板
-├── .env                         # 本地实际配置及账号，不进 Git
+├── .env.example                 # 带中文注释的服务与网络配置模板
+├── .env                         # 本地实际配置，不进 Git
 ├── docker-compose.yml           # 容器部署
-├── Dockerfile                   # 镜像构建及实际解析测试
+├── Dockerfile                   # 镜像构建
 ├── install.sh                   # 首次部署入口
 ├── scripts/
 │   ├── start.sh                 # 容器启动与生命周期
-│   ├── migrate-config.sh        # 旧配置合并及备份
 │   └── lib/
-│       ├── runtime-config.sh    # .env 解析与配置项检查
-│       ├── network-config.sh    # 模式、默认值和旧参数归一化
-│       ├── users.sh             # 统一账号读取及认证配置
-│       ├── strongswan.sh        # 生成连接配置
+│       ├── runtime-config.sh    # .env 解析及参数检查
+│       ├── network-config.sh    # 网络模式与默认值
+│       ├── users.sh             # 账号校验、NT 哈希和原子写回
+│       ├── strongswan.sh        # 生成连接配置与哈希凭据
 │       └── proxyarp.sh          # ARP 与旁路由策略路由
 ├── config/
 │   ├── strongswan.conf          # 镜像内部静态配置
-│   └── users.txt                # 仅为旧部署兼容保留
+│   ├── users.example            # 带注释的账号模板
+│   └── users.txt                # 本地账号和 NT 哈希，不进 Git
 ├── ssl/                         # 本地证书与私钥，不进 Git
-├── docs/configuration.md        # 参数、默认值及兼容规则
-└── tests/                       # 配置、迁移、路由和实际解析测试
+├── docs/configuration.md        # 参数与账号规则
+└── tests/                       # 配置、账号和路由测试
 ```
 
 ## 开发验证
@@ -137,5 +147,6 @@ IKEv2/
 sudo bash tests/run.sh
 ```
 
-路由测试使用独立网络命名空间，不更改宿主机网络。镜像构建还会使用镜像内的 strongSwan 实际解析 NAT、Proxy ARP 和包含特殊字符的账号配置。
-这些检查不替代真实客户端、NAS 和旁路由的连通性测试。
+测试覆盖配置校验、已知 NT 哈希向量、密码写回/重置、失败与并发编辑保护，以及隔离网络命名空间内的路由选择。
+镜像构建还会用镜像内的 strongSwan 实际解析 NAT、Proxy ARP 和 NTLM 凭据配置。
+这些检查不替代实际客户端和旁路由的连通性测试。

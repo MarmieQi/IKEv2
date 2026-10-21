@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 
+# Actual accounts, hashes, locks, and local backups (template is versioned).
+/config/users.*
+!/config/users.example
+
 # certificates and private keys
 ssl/
 *.crt

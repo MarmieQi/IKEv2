@@ -2,12 +2,10 @@
 # Read literal VPN settings without executing the mounted file as shell code.
 runtime_config_key_known() {
     case "$1" in
-        VPN_MODE|VPN_DOMAIN|VPN_USERS_FILE|VPN_CERT_FILE|VPN_KEY_FILE|VPN_DNS|VPN_ROUTES|LAN_SUBNET|\
-        NAT_POOL|NAT_VPN_POOL|NAT_DNS1|NAT_DNS2|NAT_LOCAL_TS|\
-        PROXYARP_POOL|PROXYARP_LAN|PROXYARP_VPN_POOL|PROXYARP_LAN_SUBNET|PROXYARP_LOCAL_TS|\
-        PROXYARP_GATEWAY|PROXYARP_DNS1|PROXYARP_DNS2) return 0 ;;
+        VPN_MODE|VPN_DOMAIN|VPN_CERT_FILE|VPN_KEY_FILE|VPN_DNS|VPN_ROUTES|\
+        NAT_POOL|PROXYARP_POOL|PROXYARP_LAN|PROXYARP_GATEWAY) return 0 ;;
     esac
-    [[ "$1" =~ ^USER_[1-9][0-9]{0,2}_(NAME|PASSWORD)$ ]]
+    return 1
 }
 
 # Only escaped quotes/backslashes are decoded; no shell interpolation occurs.
@@ -45,10 +43,8 @@ runtime_config_value() {
 runtime_config_load() {
     local file="$1" line key value number=0
     local -a keys=(
-        VPN_MODE VPN_DOMAIN VPN_USERS_FILE VPN_CERT_FILE VPN_KEY_FILE VPN_DNS VPN_ROUTES LAN_SUBNET
-        NAT_POOL NAT_VPN_POOL NAT_DNS1 NAT_DNS2 NAT_LOCAL_TS
-        PROXYARP_POOL PROXYARP_LAN PROXYARP_VPN_POOL PROXYARP_LAN_SUBNET PROXYARP_LOCAL_TS
-        PROXYARP_GATEWAY PROXYARP_DNS1 PROXYARP_DNS2
+        VPN_MODE VPN_DOMAIN VPN_CERT_FILE VPN_KEY_FILE VPN_DNS VPN_ROUTES
+        NAT_POOL PROXYARP_POOL PROXYARP_LAN PROXYARP_GATEWAY
     )
     local -A settings=()
     if [[ ! -f "$file" || ! -r "$file" ]]; then
@@ -69,7 +65,7 @@ runtime_config_load() {
         value="${BASH_REMATCH[2]}"
         if ! runtime_config_key_known "$key"; then
             case "$key" in
-                VPN_*|NAT_*|PROXYARP_*|USER_*)
+                VPN_*|NAT_*|PROXYARP_*|USER_*|LAN_SUBNET)
                     echo "错误: $file 第 $number 行配置项不认识: $key" >&2
                     return 1 ;;
                 *) continue ;;
@@ -88,9 +84,6 @@ runtime_config_load() {
 
     # The file is authoritative. Removing/commenting a setting restores its
     # default, rather than keeping the environment from container creation.
-    for key in ${!USER_@}; do
-        if runtime_config_key_known "$key"; then unset "$key"; fi
-    done
     for key in "${keys[@]}"; do
         unset "$key"
     done

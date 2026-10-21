@@ -10,7 +10,8 @@ services:
     volumes:
       - /lib/modules:/lib/modules:ro
       - ./ssl:/ssl:ro
-      - ./config:/etc/ikev2:ro
+      # Account directory must be writable for atomic plaintext -> NT hash updates.
+      - ./config:/etc/ikev2
       # Mount the directory so editor atomic saves of .env remain visible.
       - ./:/run/ikev2-config:ro
 

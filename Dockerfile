@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     procps \
     kmod \
+    openssl \
+    util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 COPY config/strongswan.conf /etc/strongswan.conf

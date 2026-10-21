@@ -1,5 +1,5 @@
 #!/bin/bash
-# Resolve public settings and legacy aliases once; consumers use normalized values.
+# Resolve public settings and defaults once; consumers use normalized values.
 config_pool_first_ip() {
     local pool="$1"
     pool="${pool%%/*}"
@@ -11,19 +11,19 @@ network_config_resolve() {
     VPN_MODE="${VPN_MODE:-nat}"
     case "$VPN_MODE" in
         nat)
-            VPN_POOL="${NAT_POOL:-${NAT_VPN_POOL:-10.66.0.0/24}}"
-            VPN_LOCAL_TS="${VPN_ROUTES:-${NAT_LOCAL_TS:-0.0.0.0/0}}"
-            VPN_DNS="${VPN_DNS:-${NAT_DNS1:-1.1.1.1},${NAT_DNS2:-8.8.8.8}}"
-            LAN_SUBNET="${LAN_SUBNET:-}"
+            VPN_POOL="${NAT_POOL:-10.66.0.0/24}"
+            VPN_LOCAL_TS="${VPN_ROUTES:-0.0.0.0/0}"
+            VPN_DNS="${VPN_DNS:-1.1.1.1,8.8.8.8}"
+            LAN_SUBNET=""
             ;;
         proxyarp)
-            VPN_POOL="${PROXYARP_POOL:-${PROXYARP_VPN_POOL:-192.168.0.240/28}}"
+            VPN_POOL="${PROXYARP_POOL:-192.168.0.201-192.168.0.210}"
             first="$(config_pool_first_ip "$VPN_POOL")"
             auto_lan="${first%.*}.0/24"
             auto_dns="${first%.*}.1"
-            LAN_SUBNET="${PROXYARP_LAN:-${PROXYARP_LAN_SUBNET:-${LAN_SUBNET:-$auto_lan}}}"
-            VPN_LOCAL_TS="${VPN_ROUTES:-${PROXYARP_LOCAL_TS:-$LAN_SUBNET}}"
-            VPN_DNS="${VPN_DNS:-${PROXYARP_DNS1:-$auto_dns},${PROXYARP_DNS2:-1.1.1.1}}"
+            LAN_SUBNET="${PROXYARP_LAN:-$auto_lan}"
+            VPN_LOCAL_TS="${VPN_ROUTES:-$LAN_SUBNET}"
+            VPN_DNS="${VPN_DNS:-$auto_dns,1.1.1.1}"
             ;;
         *) echo '错误: VPN_MODE 只能是 nat 或 proxyarp' >&2; return 1 ;;
     esac

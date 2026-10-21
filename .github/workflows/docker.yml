@@ -18,7 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check configuration, migration and gateway routing
+      - name: Check configuration, account hashing and gateway routing
         run: sudo bash tests/run.sh
 
       - name: Set up Docker Buildx

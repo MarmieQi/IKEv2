@@ -3,5 +3,6 @@
 .env.*
 !.env.example
 ssl/
-config/users.txt
+config/users.*
+!config/users.example
 *.log
