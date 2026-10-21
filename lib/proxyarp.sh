@@ -72,7 +72,17 @@ proxyarp_configure_farp() {
         enabled=yes
     fi
     # Included by the existing strongswan.conf after the packaged plugin defaults.
-    printf 'charon.plugins.farp.load = %s\n' "$enabled" > /etc/strongswan.d/ikev2-farp.conf
+    # Documentation uses dotted option paths, but the file parser requires
+    # nested sections (notably the Debian 12 strongSwan 5.9.8 parser).
+    cat > /etc/strongswan.d/ikev2-farp.conf <<EOF
+charon {
+    plugins {
+        farp {
+            load = $enabled
+        }
+    }
+}
+EOF
 }
 
 proxyarp_gateway_cleanup() {
