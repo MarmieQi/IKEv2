@@ -352,6 +352,75 @@ PROXYARP_VPN_POOL 必须避开已有设备 IP
 如果客户端所在地网络也是 192.168.0.0/24，可能发生路由冲突
 ```
 
+### 可选：通过同局域网旁路由上网
+
+例如 IKEv2 宿主机为 `192.168.0.2`，旁路由为 `192.168.0.3`，可以配置：
+
+```env
+VPN_MODE=proxyarp
+PROXYARP_VPN_POOL=192.168.0.200-192.168.0.210
+PROXYARP_LAN_SUBNET=192.168.0.0/24
+PROXYARP_GATEWAY=192.168.0.3
+PROXYARP_LOCAL_TS=0.0.0.0/0
+PROXYARP_DNS1=192.168.0.1
+```
+
+此时 VPN 客户端访问 LAN 仍直接转发，非 LAN 的 IPv4 流量交给旁路由；宿主机自己的默认网关不变。
+`PROXYARP_GATEWAY` 留空时使用宿主机原有路由。它不改变 DNS、流量选择器或客户端路由；
+默认只隧道传输 LAN 流量，因此公网流量还需要显式设置 `PROXYARP_LOCAL_TS=0.0.0.0/0`，并在客户端启用全隧道。
+Windows 可在管理员 PowerShell 执行（替换连接名称）：
+
+```powershell
+Set-VpnConnection -Name "你的 VPN 连接名称" -SplitTunneling $false
+```
+
+前置条件：
+
+- 网关必须是宿主机直接可达的 LAN IPv4 地址，不能是宿主机自身，也不能在 VPN 地址池内。
+- 地址池必须完全位于 LAN 内，避开 DHCP、已有设备及 LAN 网络地址和广播地址。
+  例如 LAN 为 `/24` 时，不要在启用网关功能时使用包含 `.255` 的 `192.168.0.240/28`；可使用上面的明确范围或 `192.168.0.240/29`。
+- 旁路由必须开启 IP 转发，允许 VPN 地址池转发，并配置上网 NAT 或等效的上游回程。
+  本项目在 Proxy ARP 模式下不做出口 NAT；旁路由应将 VPN 地址池视为 LAN 客户端。
+- 镜像显式加载 `farp`，代答在线 VPN 客户端的 ARP，使旁路由和其他 LAN 设备的回包进入 VPN 服务器。
+  旁路由不能再把这些客户端的回包送向自己的默认出口，也不能配置回到 VPN 服务器的公网默认路由而造成循环。
+- 仅支持 IPv4。客户端所在网络与家里网段重叠的路由冲突仍需单独解决。
+
+实现集中在 `lib/proxyarp.sh`，启动脚本只调用模块接口。
+模块按 VPN 地址池生成精确的源地址规则，使用专用路由表 `20162`、协议标记 `186` 和规则优先级 `219`
+（先于 strongSwan 默认的 `220` 规则，晚于本机地址规则）。这些编号供本项目保留；检测到其他规则或路由占用时启动失败。
+自定义宿主机策略路由时，请检查更高优先级的规则是否会抢先匹配。
+模块不更改 strongSwan 的 `220` 表。正常停止和下次启动时仅清理带有本模块表号及协议标记的路由和规则；
+强制终止后，下次启动会清理残留。为避免同网卡转发产生 ICMP 重定向，还会关闭宿主机 `all` 和网关所在网卡的
+`send_redirects`；停止时保留这一设置，其他服务若依赖它需自行协调。
+
+检查配置（将 IP 换为实际在线客户端地址）：
+
+```bash
+docker logs ikev2-mschapv2 2>&1 | grep -E 'loaded plugins|Proxy ARP 网关'
+ip -4 rule show
+ip -4 route show table 20162
+ip -4 route show table 220
+ip -4 route get 1.1.1.1 from 192.168.0.200 iif eth0
+```
+
+最后一条中的 `eth0` 替换为 VPN 解密流量进入的物理网卡。预期公网下一跳是旁路由，访问 LAN 走直连路由。
+还应从实际 VPN 客户端检查内网访问、DNS、公网出口及回包，并在重启、修改网关、关闭选项后检查旧规则已清理。
+修改 `.env` 后使用 `docker compose up -d --force-recreate` 应用。
+
+开发验证可在有 root 权限并支持 network namespace 的 Linux 上执行：
+
+```bash
+bash tests/proxyarp-routing.sh
+```
+
+测试在独立网络命名空间中检查路由选择、范围边界、配置校验、资源冲突、重启和清理，不改宿主机网络；
+它不代替实际 IKEv2 客户端和旁路由的连通性验证。
+
+配置依据：[strongSwan 转发与分流](https://docs.strongswan.org/docs/5.9/howtos/forwarding.html)、
+[farp 插件](https://docs.strongswan.org/docs/5.9/plugins/farp.html)、
+[Linux ip-rule](https://man7.org/linux/man-pages/man8/ip-rule.8.html)、
+[Linux ip-route](https://man7.org/linux/man-pages/man8/ip-route.8.html)。
+
 ---
 
 ## 安卓配置

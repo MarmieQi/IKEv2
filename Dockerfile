@@ -15,8 +15,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY strongswan.conf /etc/strongswan.conf
 COPY start.sh /start.sh
+COPY lib/ /usr/local/lib/ikev2/
 
 RUN chmod +x /start.sh \
-    && test -f /usr/lib/ipsec/plugins/libstrongswan-eap-mschapv2.so
+    && bash -n /start.sh \
+    && bash -n /usr/local/lib/ikev2/proxyarp.sh \
+    && test -f /usr/lib/ipsec/plugins/libstrongswan-eap-mschapv2.so \
+    && test -f /usr/lib/ipsec/plugins/libstrongswan-farp.so
 
 CMD ["/start.sh"]

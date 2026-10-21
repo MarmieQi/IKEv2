@@ -18,6 +18,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check shell syntax and gateway routing
+        run: |
+          for script in start.sh lib/proxyarp.sh tests/proxyarp-routing.sh; do
+            bash -n "$script"
+          done
+          sudo bash tests/proxyarp-routing.sh
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 

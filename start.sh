@@ -1,6 +1,20 @@
 #!/bin/bash
 set -euo pipefail
 
+source /usr/local/lib/ikev2/proxyarp.sh
+
+IPSEC_PID=""
+cleanup() {
+    local status=$?
+    trap - EXIT
+    if [ -n "$IPSEC_PID" ]; then
+        kill "$IPSEC_PID" 2>/dev/null || true
+        wait "$IPSEC_PID" 2>/dev/null || true
+    fi
+    proxyarp_gateway_cleanup || true
+    exit "$status"
+}
+
 VPN_MODE="${VPN_MODE:-nat}"
 VPN_DOMAIN="${VPN_DOMAIN:?缺少 VPN_DOMAIN}"
 VPN_USERS_FILE="${VPN_USERS_FILE:-/etc/ikev2/users.txt}"
@@ -291,6 +305,13 @@ echo "服务器证书信息:"
 openssl x509 -in /etc/swanctl/x509/cert.pem -noout -subject -issuer -dates -ext subjectAltName -ext extendedKeyUsage || true
 
 generate_swanctl_config
+proxyarp_configure_farp "$VPN_MODE"
+
+# Also removes owned rules left by an ungraceful previous container exit.
+proxyarp_gateway_cleanup
+trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 echo "关键 swanctl 配置:"
 grep -E 'send_cert|send_certreq|mobike|fragmentation|proposals|eap_id|local_ts|rekey_time|dns =|secrets|eap-user-' /etc/swanctl/swanctl.conf || true
@@ -334,6 +355,13 @@ else
     iptables_rule_ensure FORWARD $VPN_POOL_SRC_ARGS -d "$LAN_SUBNET" -j ACCEPT
     # shellcheck disable=SC2086
     iptables_rule_ensure FORWARD -s "$LAN_SUBNET" $VPN_POOL_DST_ARGS -j ACCEPT
+fi
+
+if [ "$VPN_MODE" = "proxyarp" ]; then
+    proxyarp_gateway_apply "$VPN_POOL" "$LAN_SUBNET" "${PROXYARP_GATEWAY:-}"
+    if [ -n "${PROXYARP_GATEWAY:-}" ] && [ "$VPN_LOCAL_TS" != "0.0.0.0/0" ]; then
+        echo "提示: 指定网关仅影响已进入 VPN 的流量；需要公网全隧道时设置 PROXYARP_LOCAL_TS=0.0.0.0/0 并配置客户端"
+    fi
 fi
 
 ipsec start --nofork &
