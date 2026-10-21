@@ -20,6 +20,7 @@ COPY lib/ /usr/local/lib/ikev2/
 RUN chmod +x /start.sh \
     && bash -n /start.sh \
     && bash -n /usr/local/lib/ikev2/proxyarp.sh \
+    && bash -n /usr/local/lib/ikev2/runtime-config.sh \
     && test -f /usr/lib/ipsec/plugins/libstrongswan-eap-mschapv2.so \
     && test -f /usr/lib/ipsec/plugins/libstrongswan-farp.so
 

@@ -202,6 +202,40 @@ chmod +x install.sh
 ./install.sh
 ```
 
+## 修改配置与更新
+
+修改 `.env` 中的 VPN 模式、网关、DNS、地址池、域名或证书文件名后，直接重启：
+
+```bash
+docker compose restart
+```
+
+也可以在 NAS 的 Docker 管理界面重启容器。启动日志应出现 `已读取运行配置`。
+修改账号或证书后同样重启，并让 VPN 客户端断开重连。
+
+首次从旧版本升级，需要在部署目录执行一次：
+
+```bash
+git pull --ff-only
+docker compose pull
+docker compose up -d --force-recreate --pull never
+```
+
+这一步同时升级镜像和配置挂载；旧容器仅重启无法获得新挂载。以后修改 `.env` 只需重启。
+后续程序更新仍使用 `git pull --ff-only`、`docker compose pull` 和 `docker compose up -d`。
+Compose 自身的挂载、网络等配置变更仍需要重新创建容器。
+
+`.env` 每次启动时由 `lib/runtime-config.sh` 读取，覆盖容器创建时的旧 VPN 环境变量；
+删除或注释某项会恢复默认行为，例如注释 `PROXYARP_GATEWAY` 后恢复宿主机原有路由。
+支持 `KEY=VALUE`、空行、注释、Windows 换行、单/双引号和空白后的行尾注释。
+值按字面读取，不支持 `${变量}` 插值、命令替换、转义引号或多行值；其他 Compose 变量不会导入 VPN 进程。
+配置格式错误或文件缺失时停止启动，避免悄悄使用旧配置。
+
+Compose 只读挂载部署目录，使编辑器通过替换文件保存 `.env` 后也能读取新内容；
+运行代码仍使用镜像内版本。账号目录单独挂载到 `/etc/ikev2`。
+自行使用 `docker run` 部署时，如果不设置 `IKEV2_CONFIG_FILE`，仍可通过环境变量配置；
+设置该变量时必须挂载对应配置文件所在目录。
+
 ---
 
 ## 多账号配置
@@ -405,12 +439,13 @@ ip -4 route get 1.1.1.1 from 192.168.0.200 iif eth0
 
 最后一条中的 `eth0` 替换为 VPN 解密流量进入的物理网卡。预期公网下一跳是旁路由，访问 LAN 走直连路由。
 还应从实际 VPN 客户端检查内网访问、DNS、公网出口及回包，并在重启、修改网关、关闭选项后检查旧规则已清理。
-修改 `.env` 后使用 `docker compose up -d --force-recreate` 应用。
+完成上述首次升级后，修改 `.env` 使用 `docker compose restart` 应用。
 
 开发验证可在有 root 权限并支持 network namespace 的 Linux 上执行：
 
 ```bash
 bash tests/proxyarp-routing.sh
+bash tests/runtime-config.sh
 ```
 
 测试在独立网络命名空间中检查路由选择、范围边界、配置校验、资源冲突、重启和清理，不改宿主机网络；

@@ -10,7 +10,9 @@ services:
     volumes:
       - /lib/modules:/lib/modules:ro
       - ./ssl:/ssl:ro
-      - ./config/users.txt:/etc/ikev2/users.txt:ro
+      - ./config:/etc/ikev2:ro
+      # Mount the directory so editor atomic saves of .env remain visible.
+      - ./:/run/ikev2-config:ro
 
-    env_file:
-      - .env
+    environment:
+      IKEV2_CONFIG_FILE: /run/ikev2-config/.env

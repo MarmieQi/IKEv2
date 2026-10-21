@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+source /usr/local/lib/ikev2/runtime-config.sh
+if [ -n "${IKEV2_CONFIG_FILE:-}" ]; then
+    runtime_config_load "$IKEV2_CONFIG_FILE"
+fi
+
 source /usr/local/lib/ikev2/proxyarp.sh
 
 IPSEC_PID=""

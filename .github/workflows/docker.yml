@@ -20,9 +20,10 @@ jobs:
 
       - name: Check shell syntax and gateway routing
         run: |
-          for script in start.sh lib/proxyarp.sh tests/proxyarp-routing.sh; do
+          for script in start.sh lib/*.sh tests/*.sh; do
             bash -n "$script"
           done
+          bash tests/runtime-config.sh
           sudo bash tests/proxyarp-routing.sh
 
       - name: Set up Docker Buildx
