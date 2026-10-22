@@ -8,6 +8,13 @@ services:
     network_mode: host
     privileged: true
 
+    # 日志自动轮转：每份 10 MB，最多保留 3 份（含当前日志）。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
     volumes:
       - /lib/modules:/lib/modules:ro
       - ./ssl:/ssl:ro

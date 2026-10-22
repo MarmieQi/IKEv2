@@ -120,6 +120,14 @@ docker exec ikev2-mschapv2 swanctl --list-sas
 `docker compose ps` 中的 `healthy` 表示启动配置已加载且 VICI 管理接口可响应，不代表公网端口、客户端连接或旁路由出口已验证。
 容器正常停止时会清理本项目的防火墙和策略路由；仅清理带归属标记的资源，不清空宿主机规则。
 
+默认启用 Docker 日志轮转：每份 10 MB，最多保留 3 份（含当前日志），总量约 30 MB，超出后自动删除最旧日志。
+`logs -f` 和 `--tail` 只控制查看方式，不改变后台日志存储。
+已有部署更新此 Compose 配置后，需要重新创建容器使日志限制生效，VPN 会短暂断开；无需重建或更新镜像：
+
+```bash
+docker compose up -d --force-recreate --pull never
+```
+
 ## 目录结构
 
 ```text
