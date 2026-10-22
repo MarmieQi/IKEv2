@@ -1,7 +1,6 @@
 #!/bin/bash
-# Account storage: name:plain:password -> name:nt:NT_HASH, with atomic write-back.
-declare -a IKEV2_USER_NAMES=() IKEV2_USER_HASHES=() USERS_NORMALIZED_LINES=()
-USERS_CHANGED=0
+# Account storage: name:password -> name:{NT}NT_HASH, with atomic write-back.
+# Contract: users_validate FILE; users_load FILE NAMES_ARRAY HASHES_ARRAY.
 
 users_hash_password() (
     set -o pipefail
@@ -11,11 +10,12 @@ users_hash_password() (
 )
 
 users_read() {
-    local file="$1" convert="$2" line name kind value hash existing number=0
-    IKEV2_USER_NAMES=()
-    IKEV2_USER_HASHES=()
-    USERS_NORMALIZED_LINES=()
-    USERS_CHANGED=0
+    local -n _names="$3" _hashes="$4" _lines="$5" _changed="$6"
+    local file="$1" convert="$2" line name value hash existing number=0
+    _names=()
+    _hashes=()
+    _lines=()
+    _changed=0
     [[ -f "$file" && -r "$file" && ! -L "$file" ]] || {
         echo '错误: 找不到可读取的账号文件 config/users.txt（不支持符号链接）' >&2; return 1;
     }
@@ -24,61 +24,62 @@ users_read() {
         line="${line%$'\r'}"
         if (( number == 1 )); then line="${line#$'\xef\xbb\xbf'}"; fi
         if [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]]; then
-            USERS_NORMALIZED_LINES+=("$line")
+            _lines+=("$line")
             continue
         fi
         name="${line%%:*}"
         value="${line#*:}"
-        kind="${value%%:*}"
-        value="${value#*:}"
-        if [[ ! "$name" =~ ^[a-zA-Z0-9_.@-]+$ || "$line" != *:*:* || -z "$value" ]]; then
-            echo "错误: 账号文件第 $number 行格式无效，请使用 用户名:plain:密码 或 用户名:nt:32位哈希" >&2
+        if [[ ! "$name" =~ ^[a-zA-Z0-9_.@-]+$ || "$line" != *:* || -z "$value" ]]; then
+            echo "错误: 账号文件第 $number 行格式无效，请使用 用户名:密码" >&2
             return 1
         fi
-        for existing in "${IKEV2_USER_NAMES[@]}"; do
+        for existing in "${_names[@]}"; do
             [[ "$existing" != "$name" ]] || {
                 echo "错误: 账号文件第 $number 行用户名重复" >&2; return 1;
             }
         done
-        case "$kind" in
-            plain)
-                [[ "$value" != *$'\r'* ]] || { echo "错误: 账号文件第 $number 行密码包含回车" >&2; return 1; }
-                hash=''
-                if [[ "$convert" == yes ]]; then
-                    hash="$(users_hash_password "$value")" || {
-                        echo "错误: 账号文件第 $number 行密码哈希失败，原文件未替换" >&2; return 1;
-                    }
-                    [[ "$hash" =~ ^[0-9a-f]{32}$ ]] || { echo '错误: NT 哈希生成结果无效' >&2; return 1; }
-                fi
-                USERS_CHANGED=1
-                ;;
-            nt)
-                [[ "$value" =~ ^[0-9A-Fa-f]{32}$ ]] || {
-                    echo "错误: 账号文件第 $number 行 NT 哈希必须为 32 位十六进制" >&2; return 1;
+        if [[ "$value" == '{NT}'* ]]; then
+            hash="${value:4}"
+            [[ "$hash" =~ ^[0-9A-Fa-f]{32}$ ]] || {
+                echo "错误: 账号文件第 $number 行的 {NT} 哈希损坏，请将冒号后的内容替换为新密码" >&2; return 1;
+            }
+            hash="${hash,,}"
+        else
+            [[ "$value" != *$'\r'* ]] || { echo "错误: 账号文件第 $number 行密码包含回车" >&2; return 1; }
+            hash=''
+            if [[ "$convert" == yes ]]; then
+                hash="$(users_hash_password "$value")" || {
+                    echo "错误: 账号文件第 $number 行密码哈希失败，原文件未替换" >&2; return 1;
                 }
-                hash="${value,,}"
-                ;;
-            *) echo "错误: 账号文件第 $number 行密码类型只能是 plain 或 nt" >&2; return 1 ;;
-        esac
-        IKEV2_USER_NAMES+=("$name")
-        IKEV2_USER_HASHES+=("$hash")
-        USERS_NORMALIZED_LINES+=("$name:nt:$hash")
+                [[ "$hash" =~ ^[0-9a-f]{32}$ ]] || { echo '错误: NT 哈希生成结果无效' >&2; return 1; }
+            fi
+            _changed=1
+        fi
+        _names+=("$name")
+        _hashes+=("$hash")
+        _lines+=("$name:{NT}$hash")
     done < "$file"
-    (( ${#IKEV2_USER_NAMES[@]} > 0 )) || {
-        echo '错误: 请在 config/users.txt 填写至少一个账号，例如 user1:plain:你的密码' >&2; return 1;
+    (( ${#_names[@]} > 0 )) || {
+        echo '错误: 请在 config/users.txt 填写至少一个账号，例如 user1:你的密码' >&2; return 1;
     }
 }
 
-users_validate() { users_read "$1" no; }
+users_validate() {
+    local -a validated_names=() validated_hashes=() validated_lines=()
+    local validated_changed=0
+    users_read "$1" no validated_names validated_hashes validated_lines validated_changed
+}
 
 users_load_locked() {
-    local file="$1" before after temporary
+    local file="$1" before after temporary changed=0
+    local -n loaded_names="$2"
+    local -a normalized=()
     before="$(sha256sum -- "$file")" || return 1
-    users_read "$file" yes || return 1
+    users_read "$file" yes "$2" "$3" normalized changed || return 1
     chmod 600 "$file" || return 1
-    if (( USERS_CHANGED )); then
+    if (( changed )); then
         temporary="$(mktemp "${file}.tmp.XXXXXX")" || return 1
-        if ! chmod 600 "$temporary" || ! printf '%s\n' "${USERS_NORMALIZED_LINES[@]}" > "$temporary"; then
+        if ! chmod 600 "$temporary" || ! printf '%s\n' "${normalized[@]}" > "$temporary"; then
             rm -f -- "$temporary"
             return 1
         fi
@@ -95,7 +96,7 @@ users_load_locked() {
         fi
         echo '账号明文密码已转换为 NT 哈希并写回原文件（未生成明文备份）' >&2
     fi
-    echo "已加载账号数量: ${#IKEV2_USER_NAMES[@]}" >&2
+    echo "已加载账号数量: ${#loaded_names[@]}" >&2
 }
 
 users_load() {
@@ -109,7 +110,7 @@ users_load() {
     fi
     umask "$old_umask"
     if flock -x -w 10 "$lock_fd"; then
-        users_load_locked "$file" || status=$?
+        users_load_locked "$file" "$2" "$3" || status=$?
     else
         echo '错误: 账号文件正在使用，请稍后重启' >&2
         status=1
@@ -123,12 +124,13 @@ escape_swanctl_secret() {
 }
 
 generate_eap_secrets() {
+    local -n account_names="$1" account_hashes="$2"
     local i
     printf '\nsecrets {\n'
-    for ((i=0; i<${#IKEV2_USER_NAMES[@]}; i++)); do
-        [[ "${IKEV2_USER_HASHES[i]}" =~ ^[0-9a-f]{32}$ ]] || return 1
+    for ((i=0; i<${#account_names[@]}; i++)); do
+        [[ "${account_hashes[i]}" =~ ^[0-9a-f]{32}$ ]] || return 1
         printf '    ntlm-user-%d {\n        id = "%s"\n        secret = 0x%s\n    }\n' \
-            "$((i + 1))" "$(escape_swanctl_secret "${IKEV2_USER_NAMES[i]}")" "${IKEV2_USER_HASHES[i]}"
+            "$((i + 1))" "$(escape_swanctl_secret "${account_names[i]}")" "${account_hashes[i]}"
     done
     printf '}\n'
 }

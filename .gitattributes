@@ -5,4 +5,5 @@ Dockerfile text eol=lf
 *.conf text eol=lf
 *.md text eol=lf
 .env.example text eol=lf
+config/users.example text eol=lf
 .dockerignore text eol=lf

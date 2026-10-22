@@ -9,6 +9,7 @@ on:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     permissions:
       contents: read
@@ -40,10 +41,30 @@ jobs:
             type=raw,value=latest
             type=sha
 
-      - name: Build and push
+      - name: Build validation image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          load: true
+          push: false
+          tags: ikev2:verify
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check actual startup and restart in isolated container
+        run: >-
+          docker run --rm --privileged --network none
+          -e IKEV2_DISPOSABLE_TEST=yes
+          -v "${{ github.workspace }}/tests/container-lifecycle.sh:/tmp/ikev2-lifecycle.sh:ro"
+          ikev2:verify bash /tmp/ikev2-lifecycle.sh
+
+      - name: Push the verified image
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          while IFS= read -r tag; do
+            test -n "$tag" || continue
+            docker tag ikev2:verify "$tag"
+            docker push "$tag"
+          done <<< "$IMAGE_TAGS"

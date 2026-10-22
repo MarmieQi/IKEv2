@@ -42,10 +42,7 @@ runtime_config_value() {
 
 runtime_config_load() {
     local file="$1" line key value number=0
-    local -a keys=(
-        VPN_MODE VPN_DOMAIN VPN_CERT_FILE VPN_KEY_FILE VPN_DNS VPN_ROUTES
-        NAT_POOL PROXYARP_POOL PROXYARP_LAN PROXYARP_GATEWAY
-    )
+    local -n output="$2"
     local -A settings=()
     if [[ ! -f "$file" || ! -r "$file" ]]; then
         echo "错误: 无法读取运行配置 $file" >&2
@@ -82,14 +79,10 @@ runtime_config_load() {
         settings["$key"]="$RUNTIME_CONFIG_VALUE"
     done < "$file"
 
-    # The file is authoritative. Removing/commenting a setting restores its
-    # default, rather than keeping the environment from container creation.
-    for key in "${keys[@]}"; do
-        unset "$key"
-    done
+    # Publish only after the entire file has passed validation.
+    output=()
     for key in "${!settings[@]}"; do
-        printf -v "$key" '%s' "${settings[$key]}"
-        export "$key"
+        output["$key"]="${settings[$key]}"
     done
     echo "已读取运行配置: $file"
 }

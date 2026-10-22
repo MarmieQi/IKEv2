@@ -29,18 +29,18 @@ if check_config > "$test_dir/regression-output" 2>&1; then
     echo 'FAIL: parser test accepted the known invalid dotted key' >&2
     exit 1
 fi
-printf '%s\n' 'test.user:plain:colon:# dollar:$ backslash:\ quote:"' > "$test_dir/users.txt"
-users_load "$test_dir/users.txt"
-VPN_DOMAIN=vpn.example.com
+printf '%s\n' 'test.user:colon:# dollar:$ backslash:\ quote:"' > "$test_dir/users.txt"
+declare -a USER_NAMES=() USER_HASHES=()
+users_load "$test_dir/users.txt" USER_NAMES USER_HASHES
+declare -A RAW=([VPN_DOMAIN]=vpn.example.com) CONFIG=()
 for mode in nat proxyarp; do
     proxyarp_configure_farp "$mode"
     check_config
-    VPN_MODE="$mode"
-    unset VPN_DNS VPN_ROUTES
-    network_config_resolve
-    generate_swanctl_config
+    RAW[VPN_MODE]="$mode"
+    network_config_resolve RAW CONFIG
+    generate_swanctl_config /etc/swanctl/swanctl.conf CONFIG USER_NAMES USER_HASHES
     STRONGSWAN_CONF=/etc/swanctl/swanctl.conf check_config
 done
-generate_eap_secrets > "$test_dir/accounts.conf"
+generate_eap_secrets USER_NAMES USER_HASHES > "$test_dir/accounts.conf"
 STRONGSWAN_CONF="$test_dir/accounts.conf" check_config
 echo 'PASS: generated NAT, Proxy ARP and NTLM credentials parsed by the image strongSwan'

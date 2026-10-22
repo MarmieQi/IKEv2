@@ -1,7 +1,11 @@
 #!/bin/bash
 # Render connection settings from the normalized network and account model.
-generate_swanctl_config() {
-    cat > /etc/swanctl/swanctl.conf <<EOF
+generate_swanctl_config() (
+    # Restrict the file from creation, including the interval before chmod.
+    umask 077
+    local output="$1"
+    local -n config="$2"
+    cat > "$output" <<EOF
 connections {
     ikev2-mschapv2 {
         version = 2
@@ -22,13 +26,16 @@ connections {
 
         pools = vpn-pool
 
-        # Windows requires MODP2048 in the first proposal when the gateway initiates IKE rekeying.
-        proposals = aes256-sha256-modp2048,aes256-sha256-modp4096,aes128-sha256-modp2048,aes256-sha256-modp1024,aes256-sha1-modp1024,aes128-sha1-modp1024,3des-sha1-modp1024
+        # Prefer AES-128/SHA-256 as a conservative software-crypto baseline.
+        # GCM is an alternative, not a measured speed winner on CPUs without AES-NI.
+        # Keep MODP2048 first for Windows interoperability and every old suite as
+        # a fallback for existing clients. GCM uses an explicit PRF, not HMAC integrity.
+        proposals = aes128-sha256-modp2048,aes128gcm16-prfsha256-modp2048,aes128-sha256-ecp256,aes128gcm16-prfsha256-ecp256,aes256-sha256-modp2048,aes256-sha256-modp4096,aes256-sha256-modp1024,aes256-sha1-modp1024,aes128-sha1-modp1024,3des-sha1-modp1024
 
         local {
             auth = pubkey
             certs = cert.pem
-            id = $VPN_DOMAIN
+            id = ${config[domain]}
         }
 
         remote {
@@ -38,8 +45,12 @@ connections {
 
         children {
             net {
-                local_ts = $VPN_LOCAL_TS
-                esp_proposals = aes256-sha256,aes128-sha256,aes256-sha1,aes128-sha1,3des-sha1
+                local_ts = ${config[routes]}
+                # ESP encrypts actual traffic. Prefer 128-bit AES to reduce AES
+                # rounds, with CBC/SHA-256 before GCM until measured on the host.
+                # Preserve all legacy fallbacks; negotiate one suite per SA.
+                # No DH group here: keep existing Windows CHILD_SA rekey behavior.
+                esp_proposals = aes128-sha256,aes128gcm16,aes256-sha256,aes256gcm16,aes256-sha1,aes128-sha1,3des-sha1
                 # Windows clients behind NAT may not answer gateway-initiated CHILD_SA rekeying.
                 # Let the client initiate CHILD_SA rekeying instead.
                 rekey_time = 0
@@ -52,12 +63,12 @@ connections {
 
 pools {
     vpn-pool {
-        addrs = $VPN_POOL
-        dns = $VPN_DNS
+        addrs = ${config[pool]}
+        dns = ${config[dns]}
     }
 }
 EOF
 
-    chmod 600 /etc/swanctl/swanctl.conf
-    generate_eap_secrets >> /etc/swanctl/swanctl.conf
-}
+    chmod 600 "$output"
+    generate_eap_secrets "$3" "$4" >> "$output"
+)

@@ -1,6 +1,6 @@
 # IKEv2 Docker
 
-基于 Debian 12、strongSwan 的 IKEv2/IPSec 服务端，使用 EAP-MSCHAPv2 认证，支持 Windows / Android 客户端。
+基于 Debian 12、strongSwan 的 IKEv2/IPSec 服务端，使用 EAP-MSCHAPv2 认证，面向 Windows / Android / Apple 的 IKEv2 客户端。
 
 日常只维护三处：`.env` 配置服务和网络，`config/users.txt` 管理账号，`ssl/` 放证书。修改后重启容器生效。
 账号可填写明文密码，容器启动时自动转换为 NT 哈希并写回账号文件。
@@ -53,13 +53,13 @@ PROXYARP_GATEWAY=192.168.0.4
 编辑 `config/users.txt`，每行一个账号：
 
 ```text
-alice:plain:你的密码
-bob:plain:另一个密码
+alice:你的密码
+bob:另一个密码
 ```
 
-启动或重启容器后，`plain` 行自动替换为 `用户名:nt:32位NT哈希`。客户端仍输入原始密码，不填写哈希。
-修改密码时将该用户整行改回 `用户名:plain:新密码`，然后重启。禁用/删除用户时注释或删除对应行，再重启。
-密码取第二个冒号后的全部内容，不要额外加引号。完整规则见 [账号模板](config/users.example)。
+启动或重启容器后，明文密码自动替换为 `用户名:{NT}32位NT哈希`。客户端仍输入原始密码，不填写哈希。
+修改密码时将该用户整行改回 `用户名:新密码`，然后重启。禁用/删除用户时注释或删除对应行，再重启。
+密码取第一个冒号后的全部内容，不要额外加引号。完整规则见 [账号模板](config/users.example)。
 
 这里使用 strongSwan 官方支持的 NT 哈希，即 `MD4(UTF-16LE(password))`，并通过 `ntlm` 凭据加载。
 这是哈希存储，不是可逆加密；NT 哈希仍是敏感凭据，文件权限为 `600`，不要上传或提交 Git。
@@ -96,6 +96,9 @@ GitHub Actions 构建并发布 `ghcr.io/marmieqi/ikev2:latest`。
 
 ## 客户端
 
+加密优先 AES-128-CBC / SHA-256，增加 AES-GCM 选项；所有原有算法保留为兼容回退，现有客户端无需强制调整策略。
+这不是 J1900 实测的速度排名，具体协商规则见 [加密算法说明](docs/configuration.md#加密算法与客户端兼容)。
+
 - Android：选择 IKEv2/IPSec MSCHAPv2，服务器及 IPSec 标识符填写 `VPN_DOMAIN`，使用账号文件中配置的用户名和原始密码。
 - Windows：添加 IKEv2 连接，使用用户名和密码登录。全局上网需在管理员 PowerShell 执行：
 
@@ -113,7 +116,9 @@ docker exec ikev2-mschapv2 swanctl --list-sas
 ```
 
 启动日志显示 `已读取运行配置`、`已加载账号数量`；启用旁路由时显示网关和 LAN 网卡。
-包含明文账号时会显示已转换并写回的提示。日志不打印密码或哈希。
+包含明文密码的账号时会显示已转换并写回的提示。日志不打印密码或哈希。
+`docker compose ps` 中的 `healthy` 表示启动配置已加载且 VICI 管理接口可响应，不代表公网端口、客户端连接或旁路由出口已验证。
+容器正常停止时会清理本项目的防火墙和策略路由；仅清理带归属标记的资源，不清空宿主机规则。
 
 ## 目录结构
 
@@ -129,9 +134,13 @@ IKEv2/
 │   └── lib/
 │       ├── runtime-config.sh    # .env 解析及参数检查
 │       ├── network-config.sh    # 网络模式与默认值
+│       ├── ipv4.sh              # IPv4 地址、地址池与 CIDR 运算
+│       ├── certificates.sh      # 证书身份、有效期、私钥匹配与证书链
 │       ├── users.sh             # 账号校验、NT 哈希和原子写回
 │       ├── strongswan.sh        # 生成连接配置与哈希凭据
-│       └── proxyarp.sh          # ARP 与旁路由策略路由
+│       ├── proxyarp.sh          # ARP 与旁路由策略路由
+│       ├── firewall.sh          # 项目专属防火墙链及清理
+│       └── daemon.sh            # 守护进程就绪检查与停止
 ├── config/
 │   ├── strongswan.conf          # 镜像内部静态配置
 │   ├── users.example            # 带注释的账号模板
@@ -149,4 +158,6 @@ sudo bash tests/run.sh
 
 测试覆盖配置校验、已知 NT 哈希向量、密码写回/重置、失败与并发编辑保护，以及隔离网络命名空间内的路由选择。
 镜像构建还会用镜像内的 strongSwan 实际解析 NAT、Proxy ARP 和 NTLM 凭据配置。
+CI 在发布前用隔离容器运行真实入口，检查算法插件、监听端口、账号写回、模式切换、网关变更和停止清理；通过后才推送同一个已验证镜像。
+`tests/container-lifecycle.sh` 只用于具有独立网络命名空间的一次性环境，会改写测试环境的配置和网络，不能直接在生产宿主机运行。
 这些检查不替代实际客户端和旁路由的连通性测试。

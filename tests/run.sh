@@ -7,4 +7,6 @@ done
 bash tests/runtime-config.sh
 bash tests/network-config.sh
 bash tests/users.sh
+bash tests/certificates-daemon.sh
+bash tests/firewall.sh
 bash tests/proxyarp-routing.sh

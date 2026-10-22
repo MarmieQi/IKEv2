@@ -22,12 +22,13 @@ fi
 source scripts/lib/runtime-config.sh
 source scripts/lib/users.sh
 source scripts/lib/network-config.sh
-runtime_config_load .env
+declare -A RAW=() CONFIG=()
+runtime_config_load .env RAW
 users_validate config/users.txt
-network_config_resolve
+network_config_resolve RAW CONFIG
 
-VPN_CERT_FILE="${VPN_CERT_FILE:-server.crt}"
-VPN_KEY_FILE="${VPN_KEY_FILE:-server.key}"
+VPN_CERT_FILE="${CONFIG[cert_file]}"
+VPN_KEY_FILE="${CONFIG[key_file]}"
 
 if [ ! -f "ssl/$VPN_CERT_FILE" ]; then
   echo "错误：找不到证书 ssl/$VPN_CERT_FILE"
