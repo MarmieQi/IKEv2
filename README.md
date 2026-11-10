@@ -96,15 +96,10 @@ GitHub Actions 构建并发布 `ghcr.io/marmieqi/ikev2:latest`。
 
 ## 客户端
 
-加密优先 AES-128-CBC / SHA-256，增加 AES-GCM 选项；所有原有算法保留为兼容回退，现有客户端无需强制调整策略。
-这不是 J1900 实测的速度排名，具体协商规则见 [加密算法说明](docs/configuration.md#加密算法与客户端兼容)。
+服务器优先使用 AES-128-CBC / SHA-256，并提供 AES-GCM 选项；旧算法只作为其他客户端的兼容回退。Windows 默认安全提案较弱，不能把“能连上”当成已使用推荐算法。详细策略见 [加密算法说明](docs/configuration.md#加密算法与客户端兼容)。
 
 - Android：选择 IKEv2/IPSec MSCHAPv2，服务器及 IPSec 标识符填写 `VPN_DOMAIN`，使用账号文件中配置的用户名和原始密码。
-- Windows：添加 IKEv2 连接，使用用户名和密码登录。全局上网需在管理员 PowerShell 执行：
-
-```powershell
-Set-VpnConnection -Name "你的 VPN 连接名称" -SplitTunneling $false
-```
+- Windows：按 [Windows 原生 IKEv2 客户端配置](docs/windows-client.md) 配置证书信任、EAP-MSCHAPv2 和加密策略；全隧道配置也在该文档中。
 
 ## 查看运行情况
 

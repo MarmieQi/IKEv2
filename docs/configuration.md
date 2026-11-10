@@ -68,9 +68,9 @@ strongSwan 使用 `ntlm` 类型凭据及 `secret = 0x...` 加载 NT 哈希，运
 
 - IKE 握手优先 AES-128-CBC / SHA-256 / MODP2048，另外提供 AES-128-GCM / PRF-SHA-256 和 ECP256 组合。
 - ESP 数据传输按 AES-128-CBC / SHA-256、AES-128-GCM、AES-256-CBC / SHA-256、AES-256-GCM 的顺序协商。
-- 所有原有组合均保留，包括 SHA-1、MODP1024 和 3DES，供现有客户端回退。这些旧选项保留兼容性，不代表现代算法的安全水平。
-- 不要求现有 Windows 客户端修改策略；默认提案较旧的客户端仍可能协商到旧组合。仅调整服务器排序不能让客户端使用其未提供的算法。
-- GCM 使用 128 位认证标签，不叠加单独的 SHA 完整性算法。ESP 不额外增加 DH 组，保留现有客户端发起重协商的行为。
+- SHA-1、MODP1024 和 3DES 仅作为兼容回退保留，不代表推荐的安全水平。
+- Windows 默认 IKE 提案使用 MODP1024，ESP 提案还包含 DES 和 NULL。服务器保留回退意味着 Windows 可能连上但协商到旧算法；Windows 客户端应按 [官方互操作步骤](windows-client.md) 设置 MODP2048 和强 ESP 加密，或使用文档中的 PowerShell 策略精确匹配服务器首选算法。
+- GCM 使用 128 位认证标签，不叠加单独的 SHA 完整性算法。ESP 不额外增加 DH 组；Windows 客户端精确匹配时将 PFS 设为 None，服务器由客户端发起 CHILD_SA 重协商。
 
 J1900 不支持 AES-NI，AES-128-CBC / SHA-256 是兼顾兼容性的保守首选；此排序未经该宿主机吞吐测试，不能保证 CBC 比 GCM 更快。
 只协商并使用一个组合，不会同时执行列表中的全部算法。支持双方哪些组合、宿主机内核的算法支持决定最终结果。
