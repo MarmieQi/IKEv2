@@ -1,9 +1,7 @@
 services:
   ikev2:
-    image: ikev2-managed:local
-    build: .
-    pull_policy: never
     volumes:
       - ./data:/data
     environment:
       IKEV2_ACCOUNT_MODE: managed
+      IKEV2_ADMIN_BIND: "${IKEV2_ADMIN_BIND:-127.0.0.1}"

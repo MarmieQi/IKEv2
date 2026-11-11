@@ -100,22 +100,24 @@ GitHub Actions 构建并发布 `ghcr.io/marmieqi/ikev2:latest`。
 
 「连接与限速」可为每个账号分别设定并发连接数、上传和下载 Mbps。填 `0` 表示不限。达到并发上限时拒绝新登录，降低上限保留现有连接。同账号的所有会话共享速率，NAS 内核在 NAT 和 Proxy ARP 模式下对 VPN 流量执行超速丢包。旧数据库启动时自动增加这三个字段，默认均为不限。管理模式需要 NAS 内核支持 nftables 的 IPsec 匹配和速率限制。
 
-在 NAS 的项目目录构建和初始化一次。把 `admin` 换成 `config/users.txt` 中要用作后台管理员的用户名，按提示输入该账号的原始密码。即使文件中保存的是 `{NT}` 哈希，也要输入对应的原始密码。
+在 NAS 的项目目录拉取 GitHub Actions 发布的镜像。首次启用后台时，把 `admin` 换成 `config/users.txt` 中要用作后台管理员的用户名，按提示输入该账号的原始密码。即使文件中保存的是 `{NT}` 哈希，也要输入对应的原始密码。
 
 ```bash
 mkdir -p data
-docker compose -f docker-compose.yml -f docker-compose.manager.yml build ikev2
-docker compose -f docker-compose.yml -f docker-compose.manager.yml run --rm --no-deps --entrypoint /usr/local/bin/ikev2-manager ikev2 init admin
-docker compose -f docker-compose.yml -f docker-compose.manager.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.manager.yml pull
+docker compose -f docker-compose.yml -f docker-compose.manager.yml run --rm --no-deps --pull never --entrypoint /usr/local/bin/ikev2-manager ikev2 init admin
+docker compose -f docker-compose.yml -f docker-compose.manager.yml up -d --pull never
 ```
 
-启用后台后，`config/users.txt` 中的用户名保留给后台。VPN 账号需要登录后台另建，并使用不同用户名。以后用同一组 Compose 文件启动和更新。后台只监听 NAS 的 `127.0.0.1:8787`，可通过 SSH 转发访问：
+启用后台后，`config/users.txt` 中的用户名保留给后台。VPN 账号需要登录后台另建，并使用不同用户名。以后更新时先执行 `git pull --ff-only`，再用上面同一组 Compose 文件执行 `pull` 和 `up`，跳过初始化。后台只监听 NAS 的 `127.0.0.1:8787`，可通过 SSH 转发访问：
 
 ```bash
 ssh -N -L 8787:127.0.0.1:8787 用户名@NAS地址
 ```
 
 在电脑打开 `http://127.0.0.1:8787`，用初始化时设置的管理员账号登录。数据库含 VPN 凭据，备份时按私密文件处理。后台显示“待生效”时可重新应用该账号。
+
+如果要从局域网直接打开后台，在 `.env` 加入 `IKEV2_ADMIN_BIND=192.168.0.2`，把示例 IP 换成 NAS 的局域网 IPv4。用管理模式的 Compose 文件执行 `up -d` 重新创建容器，再访问 `http://192.168.0.2:8787`。后台使用 HTTP，请仅在可信局域网内使用，避免将 8787 转发到公网。
 
 本机预览可在 `manager/` 运行 `go run . preview`，使用独立的内存演示数据。演示账号和密码显示在预览登录页。
 
@@ -164,8 +166,11 @@ IKEv2/
 ├── .env.example                 # 带中文注释的服务与网络配置模板
 ├── .env                         # 本地实际配置，不进 Git
 ├── docker-compose.yml           # 容器部署
+├── docker-compose.manager.yml   # 管理模式的部署配置
 ├── Dockerfile                   # 镜像构建
 ├── install.sh                   # 首次部署入口
+├── manager/                     # 管理后台、账号策略与 SQLite 持久化
+├── data/                        # 管理模式的本地数据库，不进 Git
 ├── scripts/
 │   ├── start.sh                 # 容器启动与生命周期
 │   └── lib/

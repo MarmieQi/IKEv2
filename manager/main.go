@@ -184,7 +184,15 @@ func initialize(ctx context.Context, name string) error {
 }
 
 func serve(webServer *web.Server) error {
-	const address = "127.0.0.1:8787"
+	host := "127.0.0.1"
+	if configured := os.Getenv("IKEV2_ADMIN_BIND"); !webServer.Preview && configured != "" {
+		ip := net.ParseIP(configured).To4()
+		if ip == nil || ip.IsUnspecified() {
+			return errors.New("IKEV2_ADMIN_BIND 必须是 NAS 的具体 IPv4 地址")
+		}
+		host = ip.String()
+	}
+	address := net.JoinHostPort(host, "8787")
 	listener, err := net.Listen("tcp4", address)
 	if err != nil {
 		return err
