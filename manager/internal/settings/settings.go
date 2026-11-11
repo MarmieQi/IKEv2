@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"maps"
 	"net/netip"
 	"os/exec"
 	"regexp"
@@ -124,33 +123,24 @@ func Encode(values store.VPNSettings) []string {
 
 func LoadOrSeed(ctx context.Context, db *store.Store, loadInitial func() (store.VPNSettings, error)) (store.VPNSettings, error) {
 	saved, err := db.VPNSettings(ctx)
-	missing := errors.Is(err, sql.ErrNoRows)
-	if err != nil && !missing {
-		return nil, err
+	if err == nil && len(saved) != len(Keys) {
+		return nil, errors.New("数据库中的 VPN 设置不完整")
 	}
-	if len(saved) == len(Keys) {
-		return saved, nil
+	if !errors.Is(err, sql.ErrNoRows) {
+		return saved, err
 	}
 	initial, err := loadInitial()
 	if err != nil {
 		return nil, err
 	}
-	// The first settings page stored only DNS and routes.
-	maps.Copy(initial, saved)
 	values, err := Parse(initial)
 	if err != nil {
 		return nil, err
 	}
-	if missing {
-		if err := db.SeedVPNSettings(ctx, values); err != nil {
-			return nil, err
-		}
-		return db.VPNSettings(ctx)
-	}
-	if err := db.SaveVPNSettings(ctx, values); err != nil {
+	if err := db.SeedVPNSettings(ctx, values); err != nil {
 		return nil, err
 	}
-	return values, nil
+	return db.VPNSettings(ctx)
 }
 
 func ReadEnv(ctx context.Context, path string) (store.VPNSettings, error) {

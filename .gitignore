@@ -6,6 +6,7 @@
 # Actual accounts, hashes, locks, and local backups (template is versioned).
 /config/users.*
 !/config/users.example
+/config/admin.json
 
 # Local database and SQLite sidecar files.
 /data/

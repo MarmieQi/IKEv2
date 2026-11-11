@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -29,20 +30,15 @@ func TestManagedAccounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	imported, err := accounts.ReadUsers(strings.NewReader("old:password\r\nsecond:{NT}8846F7EAEE8FB117AD06BDD830B7586C\r\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, account := range imported {
-		if got := hex.EncodeToString(account.Hash); got != "8846f7eaee8fb117ad06bdd830b7586c" {
-			t.Fatalf("wrong imported hash for %s: %s", account.Name, got)
-		}
+	vpnAccounts := []store.Account{
+		{Name: "old", Hash: make([]byte, 16)},
+		{Name: "second", Hash: make([]byte, 16)},
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte("test-admin-password"), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Init(ctx, "old", hash, imported); err != nil {
+	if err := db.Init(ctx, "admin", hash, vpnAccounts); err != nil {
 		t.Fatal(err)
 	}
 	gateway := &previewVPN{items: []vpn.Session{
@@ -54,7 +50,7 @@ func TestManagedAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := (&web.Server{Accounts: service, Admin: "old", PasswordHash: hash, ActiveSettings: active, Preview: true}).Handler()
+	handler := (&web.Server{Accounts: service, Admin: "admin", PasswordHash: hash, ActiveSettings: active, Preview: true}).Handler()
 
 	send := func(method, path string, form url.Values, cookie *http.Cookie) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
@@ -76,7 +72,7 @@ func TestManagedAccounts(t *testing.T) {
 			t.Fatalf("anonymous %s %s was not redirected to login", endpoint.method, endpoint.path)
 		}
 	}
-	login := send("POST", "/login", url.Values{"username": {"old"}, "password": {"test-admin-password"}}, nil)
+	login := send("POST", "/login", url.Values{"username": {"admin"}, "password": {"test-admin-password"}}, nil)
 	if login.Code != 303 || len(login.Result().Cookies()) != 1 {
 		t.Fatalf("login failed: %d", login.Code)
 	}
@@ -153,14 +149,36 @@ func TestManagedAccounts(t *testing.T) {
 	if err != nil || !account.Enabled || account.Pending || hex.EncodeToString(account.Hash) != hex.EncodeToString(expected) {
 		t.Fatal("new credentials did not survive reopening SQLite")
 	}
-	if err := db.ReserveAdminNames(ctx, "old", imported); err != nil {
+	if err := db.Add(ctx, store.Account{Name: "ADMIN", Hash: expected}); err == nil {
+		t.Fatal("administrator name was accepted as a VPN account")
+	}
+}
+
+func TestInitializeAdmin(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "admin.json")
+	dbPath := filepath.Join(dir, "manager.db")
+	if err := os.WriteFile(configPath, []byte(`{"username":"admin","password":"admin"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	eligible, err := db.Accounts(ctx)
-	if err != nil || len(eligible) != 1 || eligible[0].Name != "new" {
-		t.Fatalf("expected only the separately created VPN account, got %d accounts: %v", len(eligible), err)
+	if err := initialize(ctx, dbPath, configPath); err != nil {
+		t.Fatal(err)
 	}
-	if err := db.Add(ctx, store.Account{Name: "SECOND", Hash: expected}); err == nil {
-		t.Fatal("reserved name was accepted as a VPN account")
+	if err := initialize(ctx, dbPath, configPath); err == nil {
+		t.Fatal("initialization overwrote an existing database")
+	}
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	name, hash, err := db.Admin(ctx)
+	if err != nil || name != "admin" || bcrypt.CompareHashAndPassword(hash, []byte("admin")) != nil {
+		t.Fatalf("admin credentials were not initialized: %v", err)
+	}
+	items, err := db.Accounts(ctx)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("expected no VPN accounts after initialization: %v", err)
 	}
 }

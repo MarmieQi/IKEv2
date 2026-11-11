@@ -1,13 +1,10 @@
 package accounts
 
 import (
-	"bufio"
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"regexp"
 	"strings"
 	"sync"
@@ -35,36 +32,6 @@ func PasswordHash(password string) ([]byte, error) {
 	hash := md4.New()
 	hash.Write(data)
 	return hash.Sum(nil), nil
-}
-
-func ReadUsers(r io.Reader) ([]store.Account, error) {
-	scanner := bufio.NewScanner(r)
-	var accounts []store.Account
-	for line := 1; scanner.Scan(); line++ {
-		value := scanner.Text()
-		if line == 1 {
-			value = strings.TrimPrefix(value, "\ufeff")
-		}
-		if trimmed := strings.TrimSpace(value); trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		name, password, ok := strings.Cut(value, ":")
-		if !ok || !ValidName(name) {
-			return nil, fmt.Errorf("账号文件第 %d 行格式无效", line)
-		}
-		var hash []byte
-		var err error
-		if nt, ok := strings.CutPrefix(password, "{NT}"); ok {
-			hash, err = hex.DecodeString(nt)
-		} else {
-			hash, err = PasswordHash(password)
-		}
-		if err != nil || len(hash) != 16 {
-			return nil, fmt.Errorf("账号文件第 %d 行密码或 NT 哈希无效", line)
-		}
-		accounts = append(accounts, store.Account{Name: name, Hash: hash, Enabled: true})
-	}
-	return accounts, scanner.Err()
 }
 
 type Service struct {

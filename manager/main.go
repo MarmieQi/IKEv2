@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
-	"golang.org/x/term"
 	"ikev2/manager/internal/accounts"
 	"ikev2/manager/internal/policy"
 	"ikev2/manager/internal/settings"
@@ -35,8 +34,8 @@ func run(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	gateway := vpn.VICI{Socket: "/var/run/charon.vici"}
-	if len(args) == 2 && args[0] == "init" {
-		return initialize(ctx, args[1])
+	if len(args) == 1 && args[0] == "init" {
+		return initialize(ctx, database, "/etc/ikev2/admin.json")
 	}
 	if len(args) == 1 && args[0] == "preview" {
 		return preview(ctx)
@@ -45,9 +44,8 @@ func run(args []string) error {
 		return policy.Hook(args[1])
 	}
 	check := len(args) == 2 && args[0] == "check"
-	restore := len(args) == 2 && args[0] == "restore-settings"
-	if !check && !restore && !(len(args) == 3 && args[0] == "serve") {
-		return errors.New("用法: ikev2-manager init <管理员用户名> | check <.env 路径> | restore-settings <.env 路径> | serve <地址池> <启动配置> | preview")
+	if !check && !(len(args) == 3 && args[0] == "serve") {
+		return errors.New("用法: ikev2-manager init | check <.env 路径> | serve <地址池> <启动配置> | preview")
 	}
 	db, err := store.Open(database)
 	if err != nil {
@@ -58,37 +56,7 @@ func run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("读取管理员账号: %w", err)
 	}
-	if check || restore {
-		if err := db.Migrate(ctx); err != nil {
-			return fmt.Errorf("升级账号数据库: %w", err)
-		}
-	}
-	if restore {
-		initial, err := settings.ReadEnv(ctx, args[1])
-		if err != nil {
-			return err
-		}
-		values, err := settings.Parse(initial)
-		if err != nil {
-			return err
-		}
-		if err := settings.ValidateHost(ctx, values); err != nil {
-			return err
-		}
-		if err := db.SaveVPNSettings(ctx, values); err != nil {
-			return err
-		}
-		fmt.Println("已从 .env 恢复 VPN 设置，下次启动生效。")
-		return nil
-	}
 	if check {
-		configured, err := configuredAccounts()
-		if err != nil {
-			return err
-		}
-		if err := db.ReserveAdminNames(ctx, admin, configured); err != nil {
-			return err
-		}
 		values, err := settings.LoadOrSeed(ctx, db, func() (store.VPNSettings, error) {
 			return settings.ReadEnv(ctx, args[1])
 		})
@@ -116,70 +84,41 @@ func run(args []string) error {
 	})
 }
 
-func configuredAccounts() ([]store.Account, error) {
-	file, err := os.Open("/etc/ikev2/users.txt")
+func initialize(ctx context.Context, dbPath, configPath string) (err error) {
+	raw, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("读取后台初始化配置: %w", err)
 	}
-	defer file.Close()
-	return accounts.ReadUsers(file)
-}
-
-func initialize(ctx context.Context, name string) error {
-	items, err := configuredAccounts()
-	if err != nil {
-		return err
+	defer clear(raw)
+	var config struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
 	}
-	var expected []byte
-	for _, item := range items {
-		if item.Name == name {
-			if expected != nil {
-				return errors.New("users.txt 中的管理员用户名重复")
-			}
-			expected = item.Hash
-		}
+	if json.Unmarshal(raw, &config) != nil || !accounts.ValidName(config.Username) ||
+		len(config.Password) == 0 || len(config.Password) > 72 {
+		return errors.New("admin.json 必须包含有效的 username 和 1 到 72 字节的 password")
 	}
-	if expected == nil {
-		return errors.New("管理员用户名必须存在于 users.txt")
-	}
-	fmt.Fprint(os.Stderr, "请输入该账号在 users.txt 中对应的原始密码: ")
-	password, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Fprintln(os.Stderr)
+	hash, err := bcrypt.GenerateFromPassword([]byte(config.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	defer clear(password)
-	actual, err := accounts.PasswordHash(string(password))
-	if err != nil || subtle.ConstantTimeCompare(actual, expected) != 1 {
-		return errors.New("原始密码与 users.txt 不匹配")
-	}
-	hash, err := bcrypt.GenerateFromPassword(password, bcrypt.DefaultCost)
-	if err != nil {
-		return err
-	}
-	if err := store.CreateFile(database); err != nil {
+	if err := store.CreateFile(dbPath); err != nil {
 		return fmt.Errorf("创建账号数据库: %w", err)
 	}
 	defer func() {
 		if err != nil {
-			os.Remove(database)
+			os.Remove(dbPath)
 		}
 	}()
-	db, err := store.Open(database)
+	db, err := store.Open(dbPath)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	// The interactive password prompt may outlive the startup timeout.
-	initContext := context.WithoutCancel(ctx)
-	err = db.Init(initContext, name, hash, nil)
-	if err == nil {
-		err = db.ReserveAdminNames(initContext, name, items)
-	}
-	if err != nil {
+	if err := db.Init(ctx, config.Username, hash, nil); err != nil {
 		return err
 	}
-	fmt.Printf("后台管理员 %s 已初始化。请登录后台新建 VPN 账号。\n", name)
+	fmt.Printf("后台管理员 %s 已初始化。请登录后台新建 VPN 账号。\n", config.Username)
 	return nil
 }
 
@@ -235,9 +174,6 @@ func preview(ctx context.Context) error {
 		return err
 	}
 	if err := db.SeedVPNSettings(ctx, active); err != nil {
-		return err
-	}
-	if err := db.ReserveAdminNames(ctx, "admin", nil); err != nil {
 		return err
 	}
 	items[3].Enabled = false

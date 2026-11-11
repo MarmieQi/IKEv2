@@ -89,40 +89,30 @@ docker compose up -d --force-recreate --pull never
 程序来自镜像，仅 `git pull` 或重启容器不会安装新镜像。
 GitHub Actions 构建并发布 `ghcr.io/marmieqi/ikev2:latest`。
 
-本版只支持新配置格式，不兼容旧参数和旧账号格式，也不提供自动迁移逻辑。
-旧部署升级前自行保存当前配置和账号，再按新模板填写 `.env` 和 `config/users.txt`，并更新镜像、重建容器一次。
-如果旧 `users.txt` 被 Git 跟踪且有本地修改，先将其备份并移出该路径，再执行 `git pull`，避免文件删除冲突。
-实际账号文件现在由 Git 忽略，仓库只包含 `users.example` 模板。
-
 ## 可选管理后台
 
 后台支持管理 VPN 账号、在线会话和 VPN 配置。账号与配置保存在 `data/manager.db`，证书和私钥文件存放在 `ssl/`。默认 Compose 模式读取 `.env` 和 `config/users.txt`。
 
-「连接与限速」可为每个账号分别设定并发连接数、上传和下载 Mbps。填 `0` 表示不限。达到并发上限时拒绝新登录，降低上限保留现有连接。同账号的所有会话共享速率，NAS 内核在 NAT 和 Proxy ARP 模式下对 VPN 流量执行超速丢包。旧数据库启动时自动增加这三个字段，默认均为不限。管理模式需要 NAS 内核支持 nftables 的 IPsec 匹配和速率限制。
+「连接与限速」可为每个账号分别设定并发连接数、上传和下载 Mbps。填 `0` 表示不限。达到并发上限时拒绝新登录，降低上限保留现有连接。同账号的所有会话共享速率，NAS 内核在 NAT 和 Proxy ARP 模式下对 VPN 流量执行超速丢包。管理模式需要 NAS 内核支持 nftables 的 IPsec 匹配和速率限制。
 
-在 NAS 的项目目录拉取 GitHub Actions 发布的镜像。首次启用后台时，把 `admin` 换成 `config/users.txt` 中要用作后台管理员的用户名，按提示输入该账号的原始密码。即使文件中保存的是 `{NT}` 哈希，也要输入对应的原始密码。
+首次启用后台时，在 NAS 的项目目录把 `config/admin.example.json` 复制为 `config/admin.json`。模板的用户名和密码都是 `admin`。正式部署请在执行 `init` 前把密码换成自己的密码。
 
 ```bash
 mkdir -p data
+cp -n config/admin.example.json config/admin.json
+chmod 600 config/admin.json
 docker compose -f docker-compose.yml -f docker-compose.manager.yml pull
-docker compose -f docker-compose.yml -f docker-compose.manager.yml run --rm --no-deps --pull never --entrypoint /usr/local/bin/ikev2-manager ikev2 init admin
+docker compose -f docker-compose.yml -f docker-compose.manager.yml run --rm --no-deps --pull never --entrypoint /usr/local/bin/ikev2-manager ikev2 init
 docker compose -f docker-compose.yml -f docker-compose.manager.yml up -d --pull never
 ```
 
-启用后台后，`config/users.txt` 中的用户名保留给后台。VPN 账号需要登录后台另建，并使用不同用户名。以后更新时先执行 `git pull --ff-only`，再用上面同一组 Compose 文件执行 `pull` 和 `up`，跳过初始化。
+初始化后，管理员凭据存入 SQLite，`config/admin.json` 可以删除。管理模式的 VPN 账号在后台单独创建，`config/users.txt` 用于普通 Compose 模式。以后更新时先执行 `git pull --ff-only`，再用上面同一组 Compose 文件执行 `pull` 和 `up`，跳过初始化。
 
 后台监听 `0.0.0.0:8787`。在局域网的电脑上打开 `http://NAS的局域网IP:8787`，用初始化时设置的管理员账号登录。后台使用 HTTP，请仅在可信局域网内使用，避免将 8787 转发到公网。数据库含 VPN 凭据，备份时按私密文件处理。后台显示“待生效”时可重新应用该账号。
 
 本机预览可在 `manager/` 运行 `go run . preview`，使用独立的内存演示数据。演示账号和密码显示在预览登录页。
 
 管理模式首次启动时从 `.env` 导入 VPN 配置。之后在后台的「VPN 设置」修改域名、证书文件名、网络模式、地址池、DNS 和路由。表单保存时校验 NAS 网络与证书，保存后用相同的 Compose 文件重启服务，新连接会使用新配置。
-
-如果新设置导致服务无法启动，先停止容器并修正 `.env`，再执行以下命令恢复 VPN 设置。SQLite 中的账号和配额会保留。
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.manager.yml run --rm --no-deps --entrypoint /usr/local/bin/ikev2-manager ikev2 restore-settings /run/ikev2-config/.env
-docker compose -f docker-compose.yml -f docker-compose.manager.yml up -d
-```
 
 ## 客户端
 
@@ -179,6 +169,7 @@ IKEv2/
 │       └── daemon.sh            # 守护进程就绪检查与停止
 ├── config/
 │   ├── strongswan.conf          # 镜像内部静态配置
+│   ├── admin.example.json       # 后台管理员初始化模板
 │   ├── users.example            # 带注释的账号模板
 │   └── users.txt                # 本地账号和 NT 哈希，不进 Git
 ├── ssl/                         # 本地证书与私钥，不进 Git

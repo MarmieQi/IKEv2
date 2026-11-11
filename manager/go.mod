@@ -5,7 +5,6 @@ go 1.26.3
 require (
 	github.com/strongswan/govici v0.8.2
 	golang.org/x/crypto v0.48.0
-	golang.org/x/term v0.40.0
 	modernc.org/sqlite v1.46.1
 )
 
