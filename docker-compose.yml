@@ -20,8 +20,10 @@ services:
       - ./ssl:/ssl:ro
       # Account directory must be writable for atomic plaintext -> NT hash updates.
       - ./config:/etc/ikev2
+      - ./data:/data
       # Mount the directory so editor atomic saves of .env remain visible.
       - ./:/run/ikev2-config:ro
 
     environment:
       IKEV2_CONFIG_FILE: /run/ikev2-config/.env
+      IKEV2_ACCOUNT_MODE: "${IKEV2_ACCOUNT_MODE:-managed}"

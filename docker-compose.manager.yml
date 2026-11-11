@@ -1,6 +1,0 @@
-services:
-  ikev2:
-    volumes:
-      - ./data:/data
-    environment:
-      IKEV2_ACCOUNT_MODE: managed

@@ -2,8 +2,7 @@
 
 基于 Debian 12、strongSwan 的 IKEv2/IPSec 服务端，使用 EAP-MSCHAPv2 认证，面向 Windows / Android / Apple 的 IKEv2 客户端。
 
-日常只维护三处：`.env` 配置服务和网络，`config/users.txt` 管理账号，`ssl/` 放证书。修改后重启容器生效。
-账号可填写明文密码，容器启动时自动转换为 NT 哈希并写回账号文件。
+默认启用管理后台。`.env` 提供首次启动的 VPN 设置，`config/users.txt` 保存 Web 管理员凭据，`ssl/` 存放证书和私钥。VPN 账号在后台创建。
 
 ## 首次部署
 
@@ -17,7 +16,7 @@ cp config/users.example config/users.txt
 mkdir -p ssl
 ```
 
-按各文件注释填写配置和账号。证书放入 `ssl/server.crt`（fullchain）及 `ssl/server.key`；文件名可在 `.env` 修改。
+按各文件注释填写配置，在 `config/users.txt` 只填一组 Web 管理员凭据。证书放入 `ssl/server.crt`（fullchain）及 `ssl/server.key`；文件名可在 `.env` 修改。
 证书 SAN 必须包含 VPN 域名，EKU 应包含 TLS Web Server Authentication。
 
 ```bash
@@ -48,7 +47,9 @@ PROXYARP_GATEWAY=192.168.0.4
 客户端访问 LAN 仍直连，非 LAN 的 VPN 流量交给旁路由，宿主机默认网关不变。
 `VPN_ROUTES=0.0.0.0/0` 允许全部 IPv4 目标进入隧道，客户端也必须开启全隧道。
 
-## 用户账号
+## 文件账号模式
+
+需要用文件管理 VPN 账号时，在 `.env` 设置 `IKEV2_ACCOUNT_MODE=file`，执行 `docker compose up -d` 切换。
 
 编辑 `config/users.txt`，每行一个账号：
 
@@ -75,7 +76,7 @@ docker compose restart
 ```
 
 NAS 界面点“重启容器”也可以，客户端需要重新连接。
-`config/` 必须可写挂载，供启动脚本写回账号哈希；不要将账号文件单独只读挂载。
+文件账号模式下，`config/` 必须可写挂载，供启动脚本写回账号哈希。
 Compose 的挂载、网络等容器创建参数发生变化时，仍需重新创建容器。
 
 ## 更新程序
@@ -89,7 +90,7 @@ docker compose up -d --force-recreate --pull never
 程序来自镜像，仅 `git pull` 或重启容器不会安装新镜像。
 GitHub Actions 构建并发布 `ghcr.io/marmieqi/ikev2:latest`。
 
-## 可选管理后台
+## 管理后台
 
 后台支持管理 VPN 账号、在线会话和 VPN 配置。VPN 账号与配置保存在 `data/manager.db`，Web 管理员凭据保存在 `config/users.txt`，证书和私钥文件存放在 `ssl/`。
 
@@ -100,8 +101,8 @@ GitHub Actions 构建并发布 `ghcr.io/marmieqi/ikev2:latest`。
 ```bash
 mkdir -p data
 chmod 600 config/users.txt
-docker compose -f docker-compose.yml -f docker-compose.manager.yml pull
-docker compose -f docker-compose.yml -f docker-compose.manager.yml up -d --pull never
+docker compose pull
+docker compose up -d --pull never
 ```
 
 管理模式的 VPN 账号在后台单独创建。修改管理员凭据后重启管理模式容器。旧版数据库中的管理员记录会在启动时删除，VPN 账号、配额和设置继续保留。
@@ -116,7 +117,7 @@ docker compose -f docker-compose.yml -f docker-compose.manager.yml up -d --pull 
 
 服务器优先使用 AES-128-CBC / SHA-256，并提供 AES-GCM 选项；旧算法只作为其他客户端的兼容回退。Windows 默认安全提案较弱，不能把“能连上”当成已使用推荐算法。详细策略见 [加密算法说明](docs/configuration.md#加密算法与客户端兼容)。
 
-- Android：选择 IKEv2/IPSec MSCHAPv2，服务器及 IPSec 标识符填写 `VPN_DOMAIN`，使用账号文件中配置的用户名和原始密码。
+- Android：选择 IKEv2/IPSec MSCHAPv2，服务器及 IPSec 标识符填写 `VPN_DOMAIN`，输入 VPN 用户名和密码。
 - Windows：按 [Windows 原生 IKEv2 客户端配置](docs/windows-client.md) 配置证书信任、EAP-MSCHAPv2 和加密策略；全隧道配置也在该文档中。
 
 ## 查看运行情况
@@ -148,7 +149,6 @@ IKEv2/
 ├── .env.example                 # 带中文注释的服务与网络配置模板
 ├── .env                         # 本地实际配置，不进 Git
 ├── docker-compose.yml           # 容器部署
-├── docker-compose.manager.yml   # 管理模式的部署配置
 ├── Dockerfile                   # 镜像构建
 ├── install.sh                   # 首次部署入口
 ├── manager/                     # 管理后台、账号策略与 SQLite 持久化
