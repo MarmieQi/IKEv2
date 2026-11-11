@@ -103,8 +103,9 @@ daemon_wait_ready "$IPSEC_PID" 30
 swanctl --load-all
 swanctl --list-conns
 if [[ "$ACCOUNT_MODE" == managed ]]; then
+    # Open the private account file before setpriv drops DAC capabilities.
     setpriv --bounding-set=-all,+net_admin --no-new-privs ikev2-manager serve \
-        "${CONFIG[pool]}" "$saved_settings" &
+        "${CONFIG[pool]}" "$saved_settings" < /etc/ikev2/users.txt &
     MANAGER_PID=$!
     wait -n "$IPSEC_PID" "$MANAGER_PID"
 else

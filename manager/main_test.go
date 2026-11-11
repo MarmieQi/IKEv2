@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -195,23 +194,16 @@ func TestPrepareRemovesStoredAdministrator(t *testing.T) {
 }
 
 func TestReadAdmin(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "users.txt")
 	for _, contents := range []string{
 		"\ufeff# admin\r\nadmin:password\r\n",
 		"admin:{NT}8846F7EAEE8FB117AD06BDD830B7586C\n",
 	} {
-		if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
-			t.Fatal(err)
-		}
-		name, hash, err := readAdmin(path)
+		name, hash, err := readAdmin(strings.NewReader(contents))
 		if err != nil || name != "admin" || hex.EncodeToString(hash) != "8846f7eaee8fb117ad06bdd830b7586c" {
 			t.Fatalf("failed to read administrator credentials: %v", err)
 		}
 	}
-	if err := os.WriteFile(path, []byte("admin:password\nvpn-user:password\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := readAdmin(path); err == nil {
+	if _, _, err := readAdmin(strings.NewReader("admin:password\nvpn-user:password\n")); err == nil {
 		t.Fatal("accepted more than one administrator entry")
 	}
 }

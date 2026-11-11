@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -44,7 +45,16 @@ func run(args []string) error {
 	if !check && !(len(args) == 3 && args[0] == "serve") {
 		return errors.New("用法: ikev2-manager check <.env 路径> | serve <地址池> <启动配置> | preview")
 	}
-	admin, password, err := readAdmin("/etc/ikev2/users.txt")
+	adminFile := os.Stdin
+	if check {
+		var err error
+		adminFile, err = os.Open("/etc/ikev2/users.txt")
+		if err != nil {
+			return fmt.Errorf("读取 Web 管理员文件: %w", err)
+		}
+	}
+	admin, password, err := readAdmin(adminFile)
+	adminFile.Close()
 	if err != nil {
 		return err
 	}
@@ -84,15 +94,10 @@ func run(args []string) error {
 	})
 }
 
-func readAdmin(path string) (string, []byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", nil, fmt.Errorf("读取 Web 管理员文件: %w", err)
-	}
-	defer file.Close()
+func readAdmin(input io.Reader) (string, []byte, error) {
 	var name string
 	var hash []byte
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(input)
 	for line := 1; scanner.Scan(); line++ {
 		value := scanner.Text()
 		if line == 1 {
@@ -108,6 +113,7 @@ func readAdmin(path string) (string, []byte, error) {
 		if !ok || !accounts.ValidName(username) {
 			return "", nil, fmt.Errorf("config/users.txt 第 %d 行必须使用 用户名:密码 格式", line)
 		}
+		var err error
 		if encoded, ok := strings.CutPrefix(password, "{NT}"); ok {
 			hash, err = hex.DecodeString(encoded)
 		} else {
