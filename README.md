@@ -109,15 +109,9 @@ docker compose -f docker-compose.yml -f docker-compose.manager.yml run --rm --no
 docker compose -f docker-compose.yml -f docker-compose.manager.yml up -d --pull never
 ```
 
-启用后台后，`config/users.txt` 中的用户名保留给后台。VPN 账号需要登录后台另建，并使用不同用户名。以后更新时先执行 `git pull --ff-only`，再用上面同一组 Compose 文件执行 `pull` 和 `up`，跳过初始化。后台只监听 NAS 的 `127.0.0.1:8787`，可通过 SSH 转发访问：
+启用后台后，`config/users.txt` 中的用户名保留给后台。VPN 账号需要登录后台另建，并使用不同用户名。以后更新时先执行 `git pull --ff-only`，再用上面同一组 Compose 文件执行 `pull` 和 `up`，跳过初始化。
 
-```bash
-ssh -N -L 8787:127.0.0.1:8787 用户名@NAS地址
-```
-
-在电脑打开 `http://127.0.0.1:8787`，用初始化时设置的管理员账号登录。数据库含 VPN 凭据，备份时按私密文件处理。后台显示“待生效”时可重新应用该账号。
-
-如果要从局域网直接打开后台，在 `.env` 加入 `IKEV2_ADMIN_BIND=192.168.0.2`，把示例 IP 换成 NAS 的局域网 IPv4。用管理模式的 Compose 文件执行 `up -d` 重新创建容器，再访问 `http://192.168.0.2:8787`。后台使用 HTTP，请仅在可信局域网内使用，避免将 8787 转发到公网。
+后台监听 `0.0.0.0:8787`。在局域网的电脑上打开 `http://NAS的局域网IP:8787`，用初始化时设置的管理员账号登录。后台使用 HTTP，请仅在可信局域网内使用，避免将 8787 转发到公网。数据库含 VPN 凭据，备份时按私密文件处理。后台显示“待生效”时可重新应用该账号。
 
 本机预览可在 `manager/` 运行 `go run . preview`，使用独立的内存演示数据。演示账号和密码显示在预览登录页。
 
