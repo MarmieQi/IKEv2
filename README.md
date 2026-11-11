@@ -94,6 +94,40 @@ GitHub Actions 构建并发布 `ghcr.io/marmieqi/ikev2:latest`。
 如果旧 `users.txt` 被 Git 跟踪且有本地修改，先将其备份并移出该路径，再执行 `git pull`，避免文件删除冲突。
 实际账号文件现在由 Git 忽略，仓库只包含 `users.example` 模板。
 
+## 可选管理后台
+
+后台支持管理 VPN 账号、在线会话和 VPN 配置。账号与配置保存在 `data/manager.db`，证书和私钥文件存放在 `ssl/`。默认 Compose 模式读取 `.env` 和 `config/users.txt`。
+
+「连接与限速」可为每个账号分别设定并发连接数、上传和下载 Mbps。填 `0` 表示不限。达到并发上限时拒绝新登录，降低上限保留现有连接。同账号的所有会话共享速率，NAS 内核在 NAT 和 Proxy ARP 模式下对 VPN 流量执行超速丢包。旧数据库启动时自动增加这三个字段，默认均为不限。管理模式需要 NAS 内核支持 nftables 的 IPsec 匹配和速率限制。
+
+在 NAS 的项目目录构建和初始化一次。把 `admin` 换成 `config/users.txt` 中要用作后台管理员的用户名，按提示输入该账号的原始密码。即使文件中保存的是 `{NT}` 哈希，也要输入对应的原始密码。
+
+```bash
+mkdir -p data
+docker compose -f docker-compose.yml -f docker-compose.manager.yml build ikev2
+docker compose -f docker-compose.yml -f docker-compose.manager.yml run --rm --no-deps --entrypoint /usr/local/bin/ikev2-manager ikev2 init admin
+docker compose -f docker-compose.yml -f docker-compose.manager.yml up -d
+```
+
+启用后台后，`config/users.txt` 中的用户名保留给后台。VPN 账号需要登录后台另建，并使用不同用户名。以后用同一组 Compose 文件启动和更新。后台只监听 NAS 的 `127.0.0.1:8787`，可通过 SSH 转发访问：
+
+```bash
+ssh -N -L 8787:127.0.0.1:8787 用户名@NAS地址
+```
+
+在电脑打开 `http://127.0.0.1:8787`，用初始化时设置的管理员账号登录。数据库含 VPN 凭据，备份时按私密文件处理。后台显示“待生效”时可重新应用该账号。
+
+本机预览可在 `manager/` 运行 `go run . preview`，使用独立的内存演示数据。演示账号和密码显示在预览登录页。
+
+管理模式首次启动时从 `.env` 导入 VPN 配置。之后在后台的「VPN 设置」修改域名、证书文件名、网络模式、地址池、DNS 和路由。表单保存时校验 NAS 网络与证书，保存后用相同的 Compose 文件重启服务，新连接会使用新配置。
+
+如果新设置导致服务无法启动，先停止容器并修正 `.env`，再执行以下命令恢复 VPN 设置。SQLite 中的账号和配额会保留。
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.manager.yml run --rm --no-deps --entrypoint /usr/local/bin/ikev2-manager ikev2 restore-settings /run/ikev2-config/.env
+docker compose -f docker-compose.yml -f docker-compose.manager.yml up -d
+```
+
 ## 客户端
 
 服务器优先使用 AES-128-CBC / SHA-256，并提供 AES-GCM 选项；旧算法只作为其他客户端的兼容回退。Windows 默认安全提案较弱，不能把“能连上”当成已使用推荐算法。详细策略见 [加密算法说明](docs/configuration.md#加密算法与客户端兼容)。

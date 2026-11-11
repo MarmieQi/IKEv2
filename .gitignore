@@ -7,6 +7,9 @@
 /config/users.*
 !/config/users.example
 
+# Local database and SQLite sidecar files.
+/data/
+
 # certificates and private keys
 ssl/
 *.crt

@@ -26,7 +26,10 @@ load_env <<'EOF'
 VPN_MODE=proxyarp
 EOF
 network_config_resolve RAW CONFIG
-[[ "${CONFIG[dns]}" == 192.168.0.1,1.1.1.1 && "${CONFIG[routes]}" == 192.168.0.0/24 ]] || fail 'Proxy ARP defaults'
+[[ "${CONFIG[dns]}" == 192.168.0.1,1.1.1.1 && "${CONFIG[routes]}" == 0.0.0.0/0 ]] || fail 'Proxy ARP defaults'
+RAW[VPN_ROUTES]=192.168.0.0/24
+network_config_resolve RAW CONFIG
+[[ "${CONFIG[routes]}" == 192.168.0.0/24 ]] || fail 'explicit Proxy ARP routes'
 load_env <<'EOF'
 VPN_MODE=nat
 NAT_POOL=10.67.0.0/24

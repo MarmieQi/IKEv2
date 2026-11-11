@@ -20,10 +20,10 @@
 | `VPN_CERT_FILE` | ssl/ 内的 fullchain 文件名 | `server.crt` |
 | `VPN_KEY_FILE` | ssl/ 内的私钥文件名 | `server.key` |
 | `VPN_DNS` | 逗号分隔的 IPv4 DNS 地址 | NAT：1.1.1.1,8.8.8.8；Proxy ARP：池所在 /24 的 .1 和 1.1.1.1 |
-| `VPN_ROUTES` | 逗号分隔的 IPv4 目标 CIDR | NAT：0.0.0.0/0；Proxy ARP：LAN 网段 |
+| `VPN_ROUTES` | VPN 路由范围，逗号分隔的 IPv4 目标 CIDR | 两种模式均为 0.0.0.0/0 |
 | `NAT_POOL` | NAT 客户端地址池 | 10.66.0.0/24 |
 | `PROXYARP_POOL` | 同 LAN 的客户端地址池 | 192.168.0.201-192.168.0.210 |
-| `PROXYARP_LAN` | 家里 LAN 网段 | 根据池推导 /24 |
+| `PROXYARP_LAN` | 局域网网段 | 根据池推导 /24 |
 | `PROXYARP_GATEWAY` | 非 LAN VPN 流量的下一跳 | 使用宿主机原有路由 |
 
 DNS 和路由列表不能含空格或空列表项，目前只支持 IPv4。

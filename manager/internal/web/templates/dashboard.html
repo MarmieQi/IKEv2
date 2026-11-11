@@ -1,0 +1,119 @@
+{{template "head" .}}
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    {{template "brand"}}
+    <nav aria-label="管理导航">
+      <a href="/" {{if eq .Tab "accounts"}}aria-current="page"{{end}}>{{template "account-icon"}}账号管理</a>
+      <a href="/sessions" {{if eq .Tab "sessions"}}aria-current="page"{{end}}>{{template "session-icon"}}在线会话</a>
+      <a href="/settings" {{if eq .Tab "settings"}}aria-current="page"{{end}}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M4 17h16"/><rect x="7" y="4" width="4" height="6" rx="1" fill="var(--tint)"/><rect x="13" y="14" width="4" height="6" rx="1" fill="var(--tint)"/></svg>VPN 设置</a>
+    </nav>
+    <div class="sidebar-bottom">
+      <span class="avatar admin-avatar">A</span>
+      <span><strong>{{.Admin}}</strong><small>管理员</small></span>
+      <form method="post" action="/logout"><button class="icon-button" aria-label="退出登录" title="退出登录"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 17l5-5-5-5m5 5H3m12-8h5v16h-5"/></svg></button></form>
+    </div>
+  </aside>
+  <main>
+    <div class="topbar"><span>VPN 管理 <span class="slash">/</span> {{if eq .Tab "accounts"}}账号{{else if eq .Tab "sessions"}}会话{{else}}设置{{end}}</span>
+      {{if .Preview}}<span class="preview"><i></i>演示数据</span>{{end}}
+    </div>
+    <div class="content">
+      {{if eq .Tab "settings"}}
+        {{template "vpn-settings" .}}
+      {{else}}
+      <header class="page-header">
+        <div><h1>{{if eq .Tab "accounts"}}账号管理{{else}}在线会话{{end}}</h1>
+        <p>{{if eq .Tab "accounts"}}管理 VPN 登录账号和访问权限。{{else}}查看当前建立的 VPN 连接，或断开指定会话。{{end}}</p></div>
+        {{if eq .Tab "accounts"}}<button type="button" class="button primary" data-open="add-dialog"><span class="plus">+</span> 添加账号</button>
+        {{else}}<a class="button" href="/sessions">刷新列表</a>{{end}}
+      </header>
+      {{if .Error}}<div class="message error" role="alert">{{.Error}}</div>{{end}}
+      {{if .Notice}}<div class="message success" role="status">{{.Notice}}</div>{{end}}
+      {{if .SessionError}}<div class="message error" role="alert">读取在线会话失败，请检查 strongSwan 运行状态。</div>{{end}}
+      <div class="metrics">
+        <div class="metric"><div class="metric-icon">{{template "account-icon"}}</div><span>VPN 账号</span><strong>{{len .Rows}}</strong></div>
+        <div class="metric"><div class="metric-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="m8 12 3 3 5-6"/></svg></div><span>已启用账号</span><strong>{{.Enabled}}</strong></div>
+        <div class="metric"><div class="metric-icon">{{template "session-icon"}}</div><span>在线连接</span><strong>{{if .SessionError}}—{{else}}{{len .Sessions}}{{end}}</strong></div>
+      </div>
+      {{if eq .Tab "accounts"}}
+      <section class="panel" aria-labelledby="list-title">
+        <header><h2 id="list-title">账号列表</h2></header>
+        <div class="table-scroll"><table>
+          <thead><tr><th>用户名</th><th>状态</th><th>在线连接</th><th class="actions">操作</th></tr></thead>
+          <tbody>{{range .Rows}}
+          <tr>
+            <td><div class="identity"><span class="avatar">{{.Initial}}</span><strong>{{.Name}}</strong></div></td>
+            <td data-label="状态">{{if .Pending}}<span class="pill waiting"><i></i>待生效</span>{{else if .Enabled}}<span class="pill active"><i></i>已启用</span>{{else}}<span class="pill"><i></i>已禁用</span>{{end}}</td>
+            <td data-label="在线连接"><span class="number">{{if $.SessionError}}—{{else}}{{.Connections}}{{end}}{{if .MaxSessions}} / {{.MaxSessions}}{{end}}</span></td>
+            <td class="actions">
+              <button type="button" class="text-button" data-open="reset-dialog" data-account="{{.Name}}">重置密码</button>
+              <button type="button" class="text-button" data-open="limits-dialog" data-account="{{.Name}}" data-max-sessions="{{.MaxSessions}}" data-upload-mbps="{{.UploadMbps}}" data-download-mbps="{{.DownloadMbps}}">连接与限速</button>
+              {{if .Pending}}<form method="post" action="/accounts"><input type="hidden" name="username" value="{{.Name}}"><button class="text-button" name="action" value="apply">重新应用</button></form>
+              {{else if .Enabled}}<button type="button" class="text-button danger-text" data-open="disable-dialog" data-account="{{.Name}}">禁用</button>
+              {{else}}<form method="post" action="/accounts"><input type="hidden" name="username" value="{{.Name}}"><button class="text-button" name="action" value="enable">启用</button></form>{{end}}
+            </td>
+          </tr>
+          {{else}}<tr><td colspan="4" class="empty">还没有 VPN 账号。</td></tr>{{end}}</tbody>
+        </table></div>
+      </section>
+      <dialog id="add-dialog">
+        <form method="post" action="/accounts">
+          <h2>添加账号</h2>
+          <label>用户名<input name="username" required pattern="[A-Za-z0-9_.@\-]+" autocomplete="off" autofocus></label>
+          <label>VPN 密码<input name="password" type="password" required autocomplete="new-password"></label>
+          <footer><button class="button" type="button" data-close>取消</button><button class="button primary" name="action" value="add">添加账号</button></footer>
+        </form>
+      </dialog>
+      <dialog id="reset-dialog">
+        <form method="post" action="/accounts">
+          <h2>重置密码</h2><p>为 <strong data-account-label></strong> 设置新的 VPN 密码。</p>
+          <input type="hidden" name="username">
+          <label>新密码<input name="password" type="password" required autocomplete="new-password" autofocus></label>
+          <footer><button class="button" type="button" data-close>取消</button><button class="button primary" name="action" value="reset">保存密码</button></footer>
+        </form>
+      </dialog>
+      <dialog id="limits-dialog">
+        <form method="post" action="/accounts">
+          <h2>连接与限速</h2><p>设置 <strong data-account-label></strong> 的账号配额。填写 0 表示不限，同账号的连接共享速率。</p>
+          <input type="hidden" name="username">
+          <label>共享数<input name="max_sessions" type="number" min="0" max="65535" inputmode="numeric" required autofocus></label>
+          <label>上传上限（Mbps）<input name="upload_mbps" type="number" min="0" max="10000" inputmode="numeric" required></label>
+          <label>下载上限（Mbps）<input name="download_mbps" type="number" min="0" max="10000" inputmode="numeric" required></label>
+          <footer><button class="button" type="button" data-close>取消</button><button class="button primary" name="action" value="limits">保存配额</button></footer>
+        </form>
+      </dialog>
+      <dialog id="disable-dialog">
+        <form method="post" action="/accounts">
+          <h2>禁用账号</h2><p><strong data-account-label></strong> 将无法登录，当前会话也会断开。</p>
+          <input type="hidden" name="username">
+          <footer><button class="button" type="button" data-close autofocus>取消</button><button class="button danger" name="action" value="disable">确认禁用</button></footer>
+        </form>
+      </dialog>
+      {{else}}
+      <section class="panel" aria-labelledby="sessions-title">
+        <header><h2 id="sessions-title">当前连接</h2></header>
+        <div class="table-scroll"><table>
+          <thead><tr><th>账号</th><th>VPN 地址</th><th>对端地址</th><th>实时网速</th><th class="actions">操作</th></tr></thead>
+          <tbody>{{range .Sessions}}
+          <tr><td><strong>{{.Account}}</strong></td><td class="mono" data-label="VPN 地址">{{.Address}}</td><td class="mono" data-label="对端地址">{{.Peer}}</td>
+            <td class="session-speed" data-label="实时网速" data-traffic-session="{{.ID}}">
+              <div>上传 <span data-upload>—</span></div>
+              <div>下载 <span data-download>—</span></div>
+            </td>
+            <td class="actions"><button type="button" class="text-button danger-text" data-open="disconnect-dialog" data-account="{{.Account}}" data-session="{{.ID}}">断开连接</button></td></tr>
+          {{else}}<tr><td colspan="5" class="empty">{{if .SessionError}}在线会话暂不可用。{{else}}当前没有在线连接。{{end}}</td></tr>{{end}}</tbody>
+        </table></div>
+      </section>
+      <dialog id="disconnect-dialog">
+        <form method="post" action="/sessions/disconnect">
+          <h2>断开连接</h2><p>结束 <strong data-account-label></strong> 的这条 VPN 会话。</p><input type="hidden" name="id">
+          <footer><button class="button" type="button" data-close autofocus>取消</button><button class="button danger">确认断开</button></footer>
+        </form>
+      </dialog>
+      {{end}}
+      {{end}}
+    </div>
+  </main>
+</div>
+</body></html>

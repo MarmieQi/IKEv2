@@ -4,6 +4,10 @@ generate_swanctl_config() (
     # Restrict the file from creation, including the interval before chmod.
     umask 077
     local output="$1"
+    local updown=''
+    if [[ "${5:-file}" == managed ]]; then
+        updown='updown = /usr/local/bin/ikev2-manager hook child'
+    fi
     local -n config="$2"
     cat > "$output" <<EOF
 connections {
@@ -45,6 +49,7 @@ connections {
 
         children {
             net {
+                $updown
                 local_ts = ${config[routes]}
                 # ESP encrypts actual traffic. Prefer 128-bit AES to reduce AES
                 # rounds, with CBC/SHA-256 before GCM until measured on the host.

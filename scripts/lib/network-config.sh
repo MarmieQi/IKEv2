@@ -20,9 +20,9 @@ network_config_resolve() {
     resolved[pool]="$pool"
     resolved[lan]=''
     resolved[gateway]=''
+    resolved[routes]="${raw[VPN_ROUTES]:-0.0.0.0/0}"
     if [[ "$mode" == nat ]]; then
         resolved[dns]="${raw[VPN_DNS]:-1.1.1.1,8.8.8.8}"
-        resolved[routes]="${raw[VPN_ROUTES]:-0.0.0.0/0}"
     else
         first="$(ipv4_text "$pool_first")"
         resolved[lan]="${raw[PROXYARP_LAN]:-${first%.*}.0/24}"
@@ -42,7 +42,6 @@ network_config_resolve() {
         fi
         resolved[gateway]="$gateway"
         resolved[dns]="${raw[VPN_DNS]:-${first%.*}.1,1.1.1.1}"
-        resolved[routes]="${raw[VPN_ROUTES]:-${resolved[lan]}}"
     fi
     [[ "${resolved[dns]}${resolved[routes]}" != *[[:space:]]* &&
        "${resolved[dns]}" != ,* && "${resolved[dns]}" != *, && "${resolved[dns]}" != *,,* &&

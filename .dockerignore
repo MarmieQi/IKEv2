@@ -5,4 +5,5 @@
 ssl/
 config/users.*
 !config/users.example
+data/
 *.log

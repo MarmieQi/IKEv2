@@ -6,11 +6,21 @@ for module in runtime-config network-config certificates users strongswan proxya
 done
 
 IPSEC_PID=''
+MANAGER_PID=''
 cleanup() {
     local status=$?
     trap - EXIT TERM INT
     rm -f /run/ikev2.ready
     daemon_stop "$IPSEC_PID"
+    if [[ -n "$MANAGER_PID" ]]; then
+        kill "$MANAGER_PID" 2>/dev/null || true
+        wait "$MANAGER_PID" 2>/dev/null || true
+    fi
+    if [[ "${ACCOUNT_MODE:-}" == managed && -n "$MANAGER_PID" ]]; then
+        printf '%s\n' 'add table ip ikev2_account_policy' 'delete table ip ikev2_account_policy' | nft -f - ||
+            echo '错误: 账号限速规则清理未完成' >&2
+        rm -f /run/ikev2-policy.sock
+    fi
     firewall_cleanup || echo '错误: 项目防火墙清理未完成' >&2
     proxyarp_gateway_cleanup || echo '错误: 项目策略路由清理未完成' >&2
     exit "$status"
@@ -22,7 +32,20 @@ rm -f /run/ikev2.ready
 
 declare -A RAW=() CONFIG=()
 declare -a USER_NAMES=() USER_HASHES=()
-runtime_config_load "${IKEV2_CONFIG_FILE:-/run/ikev2-config/.env}" RAW
+ACCOUNT_MODE="${IKEV2_ACCOUNT_MODE:-file}"
+config_file="${IKEV2_CONFIG_FILE:-/run/ikev2-config/.env}"
+case "$ACCOUNT_MODE" in
+    file) runtime_config_load "$config_file" RAW ;;
+    managed)
+        saved_settings="$(ikev2-manager check "$config_file")"
+        while IFS= read -r setting; do
+            key="${setting%%=*}"
+            runtime_config_key_known "$key" || exit 1
+            RAW["$key"]="${setting#*=}"
+        done <<< "$saved_settings"
+        ;;
+    *) echo '错误: IKEV2_ACCOUNT_MODE 只能是 file 或 managed' >&2; exit 1 ;;
+esac
 network_config_resolve RAW CONFIG
 network_host_validate CONFIG
 PUBLIC_IFACE="$(network_public_iface)"
@@ -31,11 +54,31 @@ KEY_PATH="/ssl/${CONFIG[key_file]}"
 
 # Validate all input before writing credentials or changing host network rules.
 certificates_validate "$CERT_PATH" "$KEY_PATH" "${CONFIG[domain]}"
-users_validate /etc/ikev2/users.txt
+if [[ "$ACCOUNT_MODE" == file ]]; then
+    users_validate /etc/ikev2/users.txt
+fi
 firewall_preflight
 certificates_prepare "$CERT_PATH" "$KEY_PATH" /etc/swanctl
-users_load /etc/ikev2/users.txt USER_NAMES USER_HASHES
-generate_swanctl_config /etc/swanctl/swanctl.conf CONFIG USER_NAMES USER_HASHES
+if [[ "$ACCOUNT_MODE" == file ]]; then
+    users_load /etc/ikev2/users.txt USER_NAMES USER_HASHES
+else
+    rm -f /run/ikev2-policy.sock
+    cat > /etc/strongswan.d/ikev2-account-policy.conf <<'EOF'
+charon {
+    half_open_timeout = 30
+    plugins {
+        ext-auth {
+            load = yes
+            script = /usr/local/bin/ikev2-manager hook admit
+        }
+        updown {
+            load = yes
+        }
+    }
+}
+EOF
+fi
+generate_swanctl_config /etc/swanctl/swanctl.conf CONFIG USER_NAMES USER_HASHES "$ACCOUNT_MODE"
 proxyarp_configure_farp "${CONFIG[mode]}"
 
 for module in xfrm_user xfrm_interface esp4 esp6 xfrm_algo; do modprobe "$module" || true; done
@@ -59,6 +102,13 @@ IPSEC_PID=$!
 daemon_wait_ready "$IPSEC_PID" 30
 swanctl --load-all
 swanctl --list-conns
-touch /run/ikev2.ready
-echo 'IKEv2 已就绪'
-wait "$IPSEC_PID"
+if [[ "$ACCOUNT_MODE" == managed ]]; then
+    setpriv --bounding-set=-all,+net_admin --no-new-privs ikev2-manager serve \
+        "${CONFIG[pool]}" "$saved_settings" &
+    MANAGER_PID=$!
+    wait -n "$IPSEC_PID" "$MANAGER_PID"
+else
+    touch /run/ikev2.ready
+    echo 'IKEv2 已就绪'
+    wait "$IPSEC_PID"
+fi

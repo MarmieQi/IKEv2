@@ -1,0 +1,28 @@
+{{template "head" .}}
+<body class="login">
+  <main class="login-shell">
+    <div class="login-brand">
+      {{template "brand"}}
+      <svg class="login-emblem" aria-hidden="true" viewBox="0 0 200 200" fill="none">
+        <circle cx="100" cy="100" r="86"/><circle cx="100" cy="100" r="67"/>
+        <path class="emblem-shield" d="m100 60-33 14v24c0 22 12 34 33 44 21-10 33-22 33-44V74l-33-14Z"/>
+        <path class="emblem-shield" d="m87 100 9 9 17-19"/>
+      </svg>
+    </div>
+    <section class="login-card" aria-labelledby="login-title">
+      <h1 id="login-title">管理员登录</h1>
+      {{if .Error}}<div class="message error" role="alert">{{.Error}}</div>{{end}}
+      <form method="post" action="/login">
+        <label>用户名<input name="username" autocomplete="username" required autofocus></label>
+        <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="button primary">登录</button>
+      </form>
+      {{if .Preview}}
+      <div class="demo-login">
+        <span class="preview"><i></i>演示账号</span>
+        <dl><div><dt>用户名</dt><dd>admin</dd></div><div><dt>密码</dt><dd>ikev2-preview</dd></div></dl>
+      </div>
+      {{end}}
+    </section>
+  </main>
+</body></html>
