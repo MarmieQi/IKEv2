@@ -31,7 +31,7 @@ DNS 和路由列表不能含空格或空列表项，目前只支持 IPv4。
 
 ## 账号与密码
 
-从 `config/users.example` 复制出 `config/users.txt`，每行一个用户：
+普通模式下，从 `config/users.example` 复制出 `config/users.txt`，每行一个 VPN 用户。管理模式下，该文件只填写一组 Web 管理员凭据，VPN 用户在后台创建。
 
 ```text
 alice:你的密码

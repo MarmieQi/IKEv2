@@ -91,24 +91,22 @@ GitHub Actions 构建并发布 `ghcr.io/marmieqi/ikev2:latest`。
 
 ## 可选管理后台
 
-后台支持管理 VPN 账号、在线会话和 VPN 配置。账号与配置保存在 `data/manager.db`，证书和私钥文件存放在 `ssl/`。默认 Compose 模式读取 `.env` 和 `config/users.txt`。
+后台支持管理 VPN 账号、在线会话和 VPN 配置。VPN 账号与配置保存在 `data/manager.db`，Web 管理员凭据保存在 `config/users.txt`，证书和私钥文件存放在 `ssl/`。
 
 「连接与限速」可为每个账号分别设定并发连接数、上传和下载 Mbps。填 `0` 表示不限。达到并发上限时拒绝新登录，降低上限保留现有连接。同账号的所有会话共享速率，NAS 内核在 NAT 和 Proxy ARP 模式下对 VPN 流量执行超速丢包。管理模式需要 NAS 内核支持 nftables 的 IPsec 匹配和速率限制。
 
-首次启用后台时，在 NAS 的项目目录把 `config/admin.example.json` 复制为 `config/admin.json`。模板的用户名和密码都是 `admin`。正式部署请在执行 `init` 前把密码换成自己的密码。
+启用后台前，编辑 `config/users.txt`，只保留一行 Web 管理员凭据，格式为 `用户名:密码`。可使用用户名 `admin` 并设置自己的密码。已有管理员行如果保存为 `用户名:{NT}哈希`，可以原样保留，登录时输入原密码。
 
 ```bash
 mkdir -p data
-cp -n config/admin.example.json config/admin.json
-chmod 600 config/admin.json
+chmod 600 config/users.txt
 docker compose -f docker-compose.yml -f docker-compose.manager.yml pull
-docker compose -f docker-compose.yml -f docker-compose.manager.yml run --rm --no-deps --pull never --entrypoint /usr/local/bin/ikev2-manager ikev2 init
 docker compose -f docker-compose.yml -f docker-compose.manager.yml up -d --pull never
 ```
 
-初始化后，管理员凭据存入 SQLite，`config/admin.json` 可以删除。管理模式的 VPN 账号在后台单独创建，`config/users.txt` 用于普通 Compose 模式。以后更新时先执行 `git pull --ff-only`，再用上面同一组 Compose 文件执行 `pull` 和 `up`，跳过初始化。
+管理模式的 VPN 账号在后台单独创建。修改管理员凭据后重启管理模式容器。旧版数据库中的管理员记录会在启动时删除，VPN 账号、配额和设置继续保留。
 
-后台监听 `0.0.0.0:8787`。在局域网的电脑上打开 `http://NAS的局域网IP:8787`，用初始化时设置的管理员账号登录。后台使用 HTTP，请仅在可信局域网内使用，避免将 8787 转发到公网。数据库含 VPN 凭据，备份时按私密文件处理。后台显示“待生效”时可重新应用该账号。
+后台监听 `0.0.0.0:8787`。在局域网的电脑上打开 `http://NAS的局域网IP:8787`，使用文件中设置的管理员账号登录。后台使用 HTTP，请仅在可信局域网内使用，避免将 8787 转发到公网。数据库含 VPN 凭据，备份时按私密文件处理。后台显示“待生效”时可重新应用该账号。
 
 本机预览可在 `manager/` 运行 `go run . preview`，使用独立的内存演示数据。演示账号和密码显示在预览登录页。
 
@@ -169,7 +167,6 @@ IKEv2/
 │       └── daemon.sh            # 守护进程就绪检查与停止
 ├── config/
 │   ├── strongswan.conf          # 镜像内部静态配置
-│   ├── admin.example.json       # 后台管理员初始化模板
 │   ├── users.example            # 带注释的账号模板
 │   └── users.txt                # 本地账号和 NT 哈希，不进 Git
 ├── ssl/                         # 本地证书与私钥，不进 Git

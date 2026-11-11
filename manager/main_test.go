@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/crypto/bcrypt"
 	"ikev2/manager/internal/accounts"
 	"ikev2/manager/internal/settings"
 	"ikev2/manager/internal/store"
@@ -22,10 +22,7 @@ import (
 func TestManagedAccounts(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "manager.db")
-	if err := store.CreateFile(path); err != nil {
-		t.Fatal(err)
-	}
-	db, err := store.Open(path)
+	db, err := store.Open(path, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,12 +31,20 @@ func TestManagedAccounts(t *testing.T) {
 		{Name: "old", Hash: make([]byte, 16)},
 		{Name: "second", Hash: make([]byte, 16)},
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte("test-admin-password"), bcrypt.MinCost)
+	hash, err := accounts.PasswordHash("test-admin-password")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Init(ctx, "admin", hash, vpnAccounts); err != nil {
+	if err := db.Prepare(ctx); err != nil {
 		t.Fatal(err)
+	}
+	for _, item := range vpnAccounts {
+		if err := db.Add(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Applied(ctx, item.Name); err != nil {
+			t.Fatal(err)
+		}
 	}
 	gateway := &previewVPN{items: []vpn.Session{
 		{ID: "1", Account: "old"}, {ID: "2", Account: "second"},
@@ -139,7 +144,7 @@ func TestManagedAccounts(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	db, err = store.Open(path)
+	db, err = store.Open(path, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,31 +159,59 @@ func TestManagedAccounts(t *testing.T) {
 	}
 }
 
-func TestInitializeAdmin(t *testing.T) {
+func TestPrepareRemovesStoredAdministrator(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "admin.json")
-	dbPath := filepath.Join(dir, "manager.db")
-	if err := os.WriteFile(configPath, []byte(`{"username":"admin","password":"admin"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := initialize(ctx, dbPath, configPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := initialize(ctx, dbPath, configPath); err == nil {
-		t.Fatal("initialization overwrote an existing database")
-	}
-	db, err := store.Open(dbPath)
+	path := filepath.Join(t.TempDir(), "manager.db")
+	db, err := store.Open(path, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	name, hash, err := db.Admin(ctx)
-	if err != nil || name != "admin" || bcrypt.CompareHashAndPassword(hash, []byte("admin")) != nil {
-		t.Fatalf("admin credentials were not initialized: %v", err)
+	if err := db.Prepare(ctx); err != nil {
+		t.Fatal(err)
 	}
-	items, err := db.Accounts(ctx)
-	if err != nil || len(items) != 0 {
-		t.Fatalf("expected no VPN accounts after initialization: %v", err)
+	if err := db.Add(ctx, store.Account{Name: "vpn-user", Hash: make([]byte, 16)}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if _, err := raw.ExecContext(ctx, "CREATE TABLE admin (password_hash BLOB); INSERT INTO admin VALUES (x'001122'); CREATE TABLE admin_names (name TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Prepare(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	err = raw.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE name IN ('admin', 'admin_names')").Scan(&count)
+	if err != nil || count != 0 {
+		t.Fatalf("legacy administrator tables remain: %d, %v", count, err)
+	}
+	if _, err := db.Account(ctx, "vpn-user"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadAdmin(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "users.txt")
+	for _, contents := range []string{
+		"\ufeff# admin\r\nadmin:password\r\n",
+		"admin:{NT}8846F7EAEE8FB117AD06BDD830B7586C\n",
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
+			t.Fatal(err)
+		}
+		name, hash, err := readAdmin(path)
+		if err != nil || name != "admin" || hex.EncodeToString(hash) != "8846f7eaee8fb117ad06bdd830b7586c" {
+			t.Fatalf("failed to read administrator credentials: %v", err)
+		}
+	}
+	if err := os.WriteFile(path, []byte("admin:password\nvpn-user:password\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readAdmin(path); err == nil {
+		t.Fatal("accepted more than one administrator entry")
 	}
 }

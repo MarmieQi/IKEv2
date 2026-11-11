@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
@@ -17,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
 	"ikev2/manager/internal/accounts"
 	"ikev2/manager/internal/settings"
 	"ikev2/manager/internal/store"
@@ -225,7 +225,8 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	s.nextLogin = time.Now().Add(2 * time.Second)
 	s.loginMu.Unlock()
-	valid := bcrypt.CompareHashAndPassword(s.PasswordHash, []byte(r.PostForm.Get("password"))) == nil
+	hash, err := accounts.PasswordHash(r.PostForm.Get("password"))
+	valid := err == nil && subtle.ConstantTimeCompare(s.PasswordHash, hash) == 1
 	if !valid || r.PostForm.Get("username") != s.Admin {
 		w.WriteHeader(http.StatusUnauthorized)
 		render(w, "login.html", page{Preview: s.Preview, Error: "用户名或密码错误。"})

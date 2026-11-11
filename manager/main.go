@@ -1,8 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -13,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
 	"ikev2/manager/internal/accounts"
 	"ikev2/manager/internal/policy"
 	"ikev2/manager/internal/settings"
@@ -34,9 +34,6 @@ func run(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	gateway := vpn.VICI{Socket: "/var/run/charon.vici"}
-	if len(args) == 1 && args[0] == "init" {
-		return initialize(ctx, database, "/etc/ikev2/admin.json")
-	}
 	if len(args) == 1 && args[0] == "preview" {
 		return preview(ctx)
 	}
@@ -45,18 +42,21 @@ func run(args []string) error {
 	}
 	check := len(args) == 2 && args[0] == "check"
 	if !check && !(len(args) == 3 && args[0] == "serve") {
-		return errors.New("用法: ikev2-manager init | check <.env 路径> | serve <地址池> <启动配置> | preview")
+		return errors.New("用法: ikev2-manager check <.env 路径> | serve <地址池> <启动配置> | preview")
 	}
-	db, err := store.Open(database)
+	admin, password, err := readAdmin("/etc/ikev2/users.txt")
+	if err != nil {
+		return err
+	}
+	db, err := store.Open(database, admin)
 	if err != nil {
 		return fmt.Errorf("打开账号数据库: %w", err)
 	}
 	defer db.Close()
-	admin, password, err := db.Admin(ctx)
-	if err != nil {
-		return fmt.Errorf("读取管理员账号: %w", err)
-	}
 	if check {
+		if err := db.Prepare(ctx); err != nil {
+			return fmt.Errorf("准备 VPN 数据库: %w", err)
+		}
 		values, err := settings.LoadOrSeed(ctx, db, func() (store.VPNSettings, error) {
 			return settings.ReadEnv(ctx, args[1])
 		})
@@ -84,42 +84,47 @@ func run(args []string) error {
 	})
 }
 
-func initialize(ctx context.Context, dbPath, configPath string) (err error) {
-	raw, err := os.ReadFile(configPath)
+func readAdmin(path string) (string, []byte, error) {
+	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("读取后台初始化配置: %w", err)
+		return "", nil, fmt.Errorf("读取 Web 管理员文件: %w", err)
 	}
-	defer clear(raw)
-	var config struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	if json.Unmarshal(raw, &config) != nil || !accounts.ValidName(config.Username) ||
-		len(config.Password) == 0 || len(config.Password) > 72 {
-		return errors.New("admin.json 必须包含有效的 username 和 1 到 72 字节的 password")
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(config.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return err
-	}
-	if err := store.CreateFile(dbPath); err != nil {
-		return fmt.Errorf("创建账号数据库: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			os.Remove(dbPath)
+	defer file.Close()
+	var name string
+	var hash []byte
+	scanner := bufio.NewScanner(file)
+	for line := 1; scanner.Scan(); line++ {
+		value := scanner.Text()
+		if line == 1 {
+			value = strings.TrimPrefix(value, "\ufeff")
 		}
-	}()
-	db, err := store.Open(dbPath)
-	if err != nil {
-		return err
+		if trimmed := strings.TrimSpace(value); trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if name != "" {
+			return "", nil, errors.New("管理模式的 config/users.txt 只能填写一组 Web 管理员账号")
+		}
+		username, password, ok := strings.Cut(value, ":")
+		if !ok || !accounts.ValidName(username) {
+			return "", nil, fmt.Errorf("config/users.txt 第 %d 行必须使用 用户名:密码 格式", line)
+		}
+		if encoded, ok := strings.CutPrefix(password, "{NT}"); ok {
+			hash, err = hex.DecodeString(encoded)
+		} else {
+			hash, err = accounts.PasswordHash(password)
+		}
+		if err != nil || len(hash) != 16 {
+			return "", nil, fmt.Errorf("config/users.txt 第 %d 行密码或 NT 哈希无效", line)
+		}
+		name = username
 	}
-	defer db.Close()
-	if err := db.Init(ctx, config.Username, hash, nil); err != nil {
-		return err
+	if err := scanner.Err(); err != nil {
+		return "", nil, fmt.Errorf("读取 Web 管理员文件: %w", err)
 	}
-	fmt.Printf("后台管理员 %s 已初始化。请登录后台新建 VPN 账号。\n", config.Username)
-	return nil
+	if name == "" {
+		return "", nil, errors.New("请在 config/users.txt 填写 Web 管理员账号")
+	}
+	return name, hash, nil
 }
 
 func serve(webServer *web.Server) error {
@@ -148,7 +153,7 @@ func serve(webServer *web.Server) error {
 }
 
 func preview(ctx context.Context) error {
-	db, err := store.Open(":memory:")
+	db, err := store.Open(":memory:", "admin")
 	if err != nil {
 		return err
 	}
@@ -157,12 +162,20 @@ func preview(ctx context.Context) error {
 		{Name: "home-admin", Hash: make([]byte, 16)}, {Name: "studio", Hash: make([]byte, 16)},
 		{Name: "travel", Hash: make([]byte, 16)}, {Name: "guest", Hash: make([]byte, 16)},
 	}
-	password, err := bcrypt.GenerateFromPassword([]byte("ikev2-preview"), bcrypt.DefaultCost)
+	password, err := accounts.PasswordHash("ikev2-preview")
 	if err != nil {
 		return err
 	}
-	if err := db.Init(ctx, "admin", password, items); err != nil {
+	if err := db.Prepare(ctx); err != nil {
 		return err
+	}
+	for _, item := range items {
+		if err := db.Add(ctx, item); err != nil {
+			return err
+		}
+		if err := db.Applied(ctx, item.Name); err != nil {
+			return err
+		}
 	}
 	active, err := settings.Parse(store.VPNSettings{
 		"VPN_DOMAIN": "vpn.example.com", "VPN_MODE": "nat",

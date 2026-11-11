@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 
@@ -25,15 +24,16 @@ type Limits struct {
 	DownloadMbps int
 }
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db    *sql.DB
+	admin string
+}
 
 const schema = `
-CREATE TABLE admin (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    name TEXT NOT NULL,
-    password_hash BLOB NOT NULL
-);
-CREATE TABLE accounts (
+PRAGMA secure_delete = ON;
+DROP TABLE IF EXISTS admin;
+DROP TABLE IF EXISTS admin_names;
+CREATE TABLE IF NOT EXISTS accounts (
     name TEXT PRIMARY KEY COLLATE NOCASE,
     nt_hash BLOB NOT NULL CHECK (length(nt_hash) = 16),
     enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
@@ -42,16 +42,22 @@ CREATE TABLE accounts (
     upload_mbps INTEGER NOT NULL DEFAULT 0 CHECK (upload_mbps BETWEEN 0 AND 10000),
     download_mbps INTEGER NOT NULL DEFAULT 0 CHECK (download_mbps BETWEEN 0 AND 10000)
 );
-CREATE TABLE admin_names (name TEXT PRIMARY KEY COLLATE NOCASE);
-CREATE TABLE vpn_settings (
+CREATE TABLE IF NOT EXISTS vpn_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     configuration TEXT NOT NULL
 );
 PRAGMA user_version = 4;`
 
-func Open(path string) (*Store, error) {
+func Open(path, admin string) (*Store, error) {
 	dsn := ":memory:"
 	if path != ":memory:" {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			return nil, err
+		}
+		if err := file.Close(); err != nil {
+			return nil, err
+		}
 		location := url.URL{Scheme: "file", Opaque: path, RawQuery: "mode=rw"}
 		dsn = location.String()
 	}
@@ -64,12 +70,12 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, admin: admin}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
-func (s *Store) Init(ctx context.Context, name string, passwordHash []byte, accounts []Account) error {
+func (s *Store) Prepare(ctx context.Context) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -78,29 +84,11 @@ func (s *Store) Init(ctx context.Context, name string, passwordHash []byte, acco
 	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO admin VALUES (1, ?, ?)", name, passwordHash); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO admin_names VALUES (?)", name); err != nil {
-		return err
-	}
-	for _, account := range accounts {
-		if _, err := tx.ExecContext(ctx, "INSERT INTO accounts (name, nt_hash, enabled, pending) VALUES (?, ?, 1, 0)", account.Name, account.Hash); err != nil {
-			return fmt.Errorf("导入账号 %s: %w", account.Name, err)
-		}
-	}
 	return tx.Commit()
 }
 
-func (s *Store) Admin(ctx context.Context) (string, []byte, error) {
-	var name string
-	var hash []byte
-	err := s.db.QueryRowContext(ctx, "SELECT name, password_hash FROM admin WHERE id = 1").Scan(&name, &hash)
-	return name, hash, err
-}
-
 func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT name, nt_hash, enabled, pending, max_sessions, upload_mbps, download_mbps FROM accounts WHERE name NOT IN (SELECT name FROM admin_names) ORDER BY name")
+	rows, err := s.db.QueryContext(ctx, "SELECT name, nt_hash, enabled, pending, max_sessions, upload_mbps, download_mbps FROM accounts WHERE name != ? ORDER BY name", s.admin)
 	if err != nil {
 		return nil, err
 	}
@@ -118,15 +106,15 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 
 func (s *Store) Account(ctx context.Context, name string) (Account, error) {
 	var account Account
-	err := s.db.QueryRowContext(ctx, "SELECT name, nt_hash, enabled, pending, max_sessions, upload_mbps, download_mbps FROM accounts WHERE name = ? AND name NOT IN (SELECT name FROM admin_names)", name).
+	err := s.db.QueryRowContext(ctx, "SELECT name, nt_hash, enabled, pending, max_sessions, upload_mbps, download_mbps FROM accounts WHERE name = ? AND name != ?", name, s.admin).
 		Scan(&account.Name, &account.Hash, &account.Enabled, &account.Pending, &account.MaxSessions, &account.UploadMbps, &account.DownloadMbps)
 	return account, err
 }
 
 func (s *Store) Add(ctx context.Context, account Account) error {
 	result, err := s.db.ExecContext(ctx, `INSERT INTO accounts (name, nt_hash, enabled, pending)
-SELECT ?, ?, 1, 1 WHERE NOT EXISTS (SELECT 1 FROM admin_names WHERE name = ?)
-ON CONFLICT(name) DO NOTHING`, account.Name, account.Hash, account.Name)
+SELECT ?, ?, 1, 1 WHERE ? != ? COLLATE NOCASE
+ON CONFLICT(name) DO NOTHING`, account.Name, account.Hash, account.Name, s.admin)
 	if err != nil {
 		return err
 	}
@@ -145,12 +133,4 @@ func (s *Store) Update(ctx context.Context, account Account) error {
 func (s *Store) Applied(ctx context.Context, name string) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE accounts SET pending = 0 WHERE name = ?", name)
 	return err
-}
-
-func CreateFile(path string) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	return file.Close()
 }
