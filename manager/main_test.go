@@ -76,6 +76,7 @@ func TestManagedAccounts(t *testing.T) {
 
 	for _, endpoint := range []struct{ method, path string }{
 		{"GET", "/"}, {"GET", "/settings"}, {"GET", "/sessions"}, {"GET", "/sessions/traffic"},
+		{"GET", "/accounts/connections"},
 		{"POST", "/settings"}, {"POST", "/settings/restart"}, {"POST", "/accounts"}, {"POST", "/logout"},
 	} {
 		response := send(endpoint.method, endpoint.path, nil, nil)
@@ -166,6 +167,10 @@ func TestManagedAccounts(t *testing.T) {
 	if err != nil || len(sessions) != 1 || sessions[0].ID != "2" {
 		t.Fatal("disabling old account should disconnect only its session")
 	}
+	if response := send("GET", "/accounts/connections", nil, cookie); response.Code != http.StatusOK ||
+		strings.TrimSpace(response.Body.String()) != `{"total":1,"counts":{"second":1}}` {
+		t.Fatalf("unexpected online counts: %d %s", response.Code, response.Body)
+	}
 	if response := send("GET", "/sessions/traffic", nil, cookie); response.Code != 200 ||
 		!strings.Contains(response.Body.String(), `"account":"second"`) ||
 		!strings.Contains(response.Body.String(), `"traffic":`) {
@@ -173,6 +178,10 @@ func TestManagedAccounts(t *testing.T) {
 	}
 	if response := send("POST", "/accounts", url.Values{"action": {"disable"}, "username": {"second"}}, cookie); response.Code != 303 {
 		t.Fatalf("disabling second account failed: %d", response.Code)
+	}
+	if response := send("GET", "/accounts/connections", nil, cookie); response.Code != http.StatusOK ||
+		strings.TrimSpace(response.Body.String()) != `{"total":0,"counts":{}}` {
+		t.Fatalf("unexpected online counts after disconnect: %d %s", response.Code, response.Body)
 	}
 	if response := send("GET", "/sessions", nil, cookie); response.Code != 200 || !strings.Contains(response.Body.String(), "当前没有在线连接") {
 		t.Fatal("session page did not show empty state")

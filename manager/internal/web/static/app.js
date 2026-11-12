@@ -84,6 +84,29 @@ function showSpeeds(row, current, previous, seconds) {
   row.querySelector('[data-download]').textContent = measured ? formatSpeed(download * 8 / seconds) : '—';
 }
 
+function pollWhileVisible(refresh, onVisibilityChange) {
+  let timer;
+  let refreshing = false;
+
+  async function poll() {
+    if (document.hidden || refreshing) return;
+    refreshing = true;
+    try {
+      await refresh();
+    } finally {
+      refreshing = false;
+      if (!document.hidden) timer = setTimeout(poll, 2000);
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    clearTimeout(timer);
+    onVisibilityChange?.();
+    poll();
+  });
+  if (!document.hidden) timer = setTimeout(poll, 2000);
+}
+
 const sessionList = document.getElementById('session-list');
 if (sessionList) {
   const rowTemplate = document.getElementById('session-row-template');
@@ -94,12 +117,8 @@ if (sessionList) {
     row => [row.dataset.trafficSession, row]));
   let previous = new Map();
   let sampledAt = 0;
-  let timer;
-  let refreshing = false;
 
-  async function refreshSessions() {
-    if (document.hidden || refreshing) return;
-    refreshing = true;
+  pollWhileVisible(async () => {
     try {
       const response = await fetch('/sessions/traffic', { redirect: 'error' });
       if (!response.ok) throw new Error('Traffic request failed');
@@ -138,17 +157,32 @@ if (sessionList) {
       empty.firstElementChild.textContent = '在线会话暂不可用。';
       count.textContent = '—';
       error.hidden = false;
-    } finally {
-      refreshing = false;
-      if (!document.hidden) timer = setTimeout(refreshSessions, 2000);
     }
-  }
-  document.addEventListener('visibilitychange', () => {
-    clearTimeout(timer);
-    previous.clear();
-    refreshSessions();
+  }, () => previous.clear());
+} else if (document.getElementById('session-count')) {
+  const count = document.getElementById('session-count');
+  const error = document.getElementById('session-error');
+  const cells = Array.from(document.querySelectorAll('[data-connection-account]'),
+    cell => [cell.dataset.connectionAccount.toLowerCase(), cell]);
+
+  pollWhileVisible(async () => {
+    try {
+      const response = await fetch('/accounts/connections', { redirect: 'error' });
+      if (!response.ok) throw new Error('Connection count request failed');
+      const { total, counts } = await response.json();
+      if (document.hidden) return;
+      count.textContent = total;
+      for (const [name, cell] of cells) {
+        cell.textContent = Object.hasOwn(counts, name) ? counts[name] : 0;
+      }
+      error.hidden = true;
+    } catch {
+      if (document.hidden) return;
+      count.textContent = '—';
+      for (const [, cell] of cells) cell.textContent = '—';
+      error.hidden = false;
+    }
   });
-  if (!document.hidden) timer = setTimeout(refreshSessions, 2000);
 }
 const vpnMode = document.querySelector('select[name="VPN_MODE"]');
 if (vpnMode) {

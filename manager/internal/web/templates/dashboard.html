@@ -44,7 +44,7 @@
           <tr>
             <td><strong>{{.Name}}</strong></td>
             <td data-label="状态">{{if .Pending}}<span class="pill waiting"><i></i>待生效</span>{{else if .Enabled}}<span class="pill active"><i></i>已启用</span>{{else}}<span class="pill"><i></i>已禁用</span>{{end}}</td>
-            <td data-label="在线连接"><span class="number">{{if $.SessionError}}—{{else}}{{.Connections}}{{end}}{{if .MaxSessions}} / {{.MaxSessions}}{{end}}</span></td>
+            <td data-label="在线连接"><span class="number"><span data-connection-account="{{.Name}}">{{if $.SessionError}}—{{else}}{{.Connections}}{{end}}</span>{{if .MaxSessions}} / {{.MaxSessions}}{{end}}</span></td>
             <td class="actions">
               <button type="button" class="text-button" data-open="reset-dialog" data-account="{{.Name}}">重置密码</button>
               <button type="button" class="text-button" data-open="limits-dialog" data-account="{{.Name}}" data-max-sessions="{{.MaxSessions}}" data-upload-mbps="{{.UploadMbps}}" data-download-mbps="{{.DownloadMbps}}">连接与限速</button>

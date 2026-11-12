@@ -78,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("GET /{$}", s.dashboard)
 	admin.HandleFunc("GET /sessions", s.dashboard)
 	admin.HandleFunc("GET /sessions/traffic", s.traffic)
+	admin.HandleFunc("GET /accounts/connections", s.connections)
 	admin.HandleFunc("POST /accounts", s.change)
 	admin.HandleFunc("GET /settings", s.vpnSettings)
 	admin.HandleFunc("POST /settings", s.saveSettings)
@@ -188,6 +189,29 @@ func (s *Server) traffic(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sessions)
+}
+
+func (s *Server) connections(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	sessions, err := s.Accounts.VPN.Sessions(ctx, false)
+	if err != nil {
+		http.Error(w, "读取连接数失败", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(struct {
+		Total  int            `json:"total"`
+		Counts map[string]int `json:"counts"`
+	}{len(sessions), connectionCounts(sessions)})
+}
+
+func connectionCounts(sessions []vpn.Session) map[string]int {
+	counts := make(map[string]int)
+	for _, session := range sessions {
+		counts[strings.ToLower(session.Account)]++
+	}
+	return counts
 }
 
 func render(w http.ResponseWriter, name string, data page) {
@@ -308,10 +332,7 @@ func (s *Server) show(w http.ResponseWriter, r *http.Request, problem string, up
 		data.SessionError = true
 	}
 	data.Sessions = sessions
-	counts := map[string]int{}
-	for _, item := range sessions {
-		counts[strings.ToLower(item.Account)]++
-	}
+	counts := connectionCounts(sessions)
 	for _, item := range items {
 		data.Rows = append(data.Rows, row{item, counts[strings.ToLower(item.Name)]})
 		if item.Enabled {
