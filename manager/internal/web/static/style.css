@@ -144,7 +144,8 @@ footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 23px; }
   input { font-size: 16px; }
 }
 .session-speed { font-variant-numeric: tabular-nums; }
-.settings-form { max-width: 680px; padding: clamp(14px, 3vw, 24px); }
+#session-empty[hidden] { display: none; }
+.settings-form { padding: clamp(14px, 3vw, 24px); }
 .settings-form input { margin-top: 7px; }
 
 .settings-form fieldset { min-inline-size: 0; border: 0; padding: 0; margin: 0; }
@@ -152,9 +153,9 @@ footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 23px; }
 .settings-form legend { font-size: 16px; font-weight: 700; }
 .settings-form small { display: block; margin-top: 6px; color: var(--muted); line-height: 1.6; overflow-wrap: anywhere; }
 .settings-form select { width: 100%; margin-top: 7px; padding: 10px; border: 1px solid #c8d3ca; border-radius: 8px; background: #fff; color: var(--ink); font: inherit; }
-.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; }
 @media (max-width: 540px) {
-  .settings-grid { grid-template-columns: 1fr; gap: 0; }
+  .settings-grid { grid-template-columns: 1fr; }
   .settings-form select { font-size: 16px; }
 }
 .dns-row { display: flex; align-items: center; gap: 8px; margin-top: 7px; }

@@ -12,35 +12,39 @@
 <form class="panel settings-form" action="/settings" method="post">
   <fieldset>
     <legend>服务与证书</legend>
-    <label for="domain">连接域名</label>
-    <input id="domain" name="VPN_DOMAIN" value="{{.Settings.VPN_DOMAIN}}" placeholder="vpn.example.com" autocomplete="off" spellcheck="false" required>
-    <small>填写客户端连接的域名。该域名必须包含在服务器证书的 SAN 中。</small>
-    <label for="mode">网络模式</label>
-    <select id="mode" name="VPN_MODE">
-      <option value="nat" {{if eq .Settings.VPN_MODE "nat"}}selected{{end}}>NAT</option>
-      <option value="proxyarp" {{if eq .Settings.VPN_MODE "proxyarp"}}selected{{end}}>Proxy ARP</option>
-    </select>
-    <small>NAT 使用独立网段，经宿主机 NAT 上网。Proxy ARP 从宿主机所在的局域网分配 IP。两种模式的配置可以同时保留，选中的模式生效。</small>
     <div class="settings-grid">
+      <div><label for="domain">连接域名</label>
+        <input id="domain" name="VPN_DOMAIN" value="{{.Settings.VPN_DOMAIN}}" placeholder="vpn.example.com" autocomplete="off" spellcheck="false" required>
+        <small>域名须包含在服务器证书的 SAN 中。</small></div>
+      <div><label for="mode">网络模式</label>
+        <select id="mode" name="VPN_MODE">
+          <option value="nat" {{if eq .Settings.VPN_MODE "nat"}}selected{{end}}>NAT</option>
+          <option value="proxyarp" {{if eq .Settings.VPN_MODE "proxyarp"}}selected{{end}}>Proxy ARP</option>
+        </select>
+        <small>NAT 使用独立网段。Proxy ARP 从宿主机所在的局域网分配 IP。</small></div>
       <div><label for="cert">证书文件名</label>
-      <input id="cert" name="VPN_CERT_FILE" value="{{.Settings.VPN_CERT_FILE}}" placeholder="server.crt" autocomplete="off" spellcheck="false"></div>
+        <input id="cert" name="VPN_CERT_FILE" value="{{.Settings.VPN_CERT_FILE}}" placeholder="server.crt" autocomplete="off" spellcheck="false"></div>
       <div><label for="key">私钥文件名</label>
-      <input id="key" name="VPN_KEY_FILE" value="{{.Settings.VPN_KEY_FILE}}" placeholder="server.key" autocomplete="off" spellcheck="false"></div>
+        <input id="key" name="VPN_KEY_FILE" value="{{.Settings.VPN_KEY_FILE}}" placeholder="server.key" autocomplete="off" spellcheck="false"></div>
     </div>
     <small>文件放在 ssl/ 目录。证书需包含完整证书链，并与私钥匹配。留空分别使用 server.crt 和 server.key。</small>
   </fieldset>
   <fieldset>
     <legend>公共网络</legend>
-    <label id="dns-label">客户端 DNS</label>
-    <div id="dns-rows" role="group" aria-labelledby="dns-label">
-      {{range .DNSRows}}{{template "dns-row" .}}{{end}}
+    <div class="settings-grid">
+      <div>
+        <label id="dns-label">客户端 DNS</label>
+        <div id="dns-rows" role="group" aria-labelledby="dns-label">
+          {{range .DNSRows}}{{template "dns-row" .}}{{end}}
+        </div>
+        <template id="dns-row-template">{{template "dns-row" ""}}</template>
+        <button class="button dns-add" type="button" id="add-dns">＋ 添加 DNS</button>
+        <small id="dns-help">每行填写一个 IPv4 DNS 地址。全部留空时，NAT 使用 1.1.1.1 和 8.8.8.8，Proxy ARP 使用地址池所在 /24 的 .1 和 1.1.1.1。网关提供 DNS 时，可以填写它的地址。</small>
+      </div>
+      <div><label for="routes">VPN 路由范围</label>
+        <input id="routes" name="VPN_ROUTES" value="{{.Settings.VPN_ROUTES}}" placeholder="0.0.0.0/0" autocomplete="off" spellcheck="false">
+        <small>填写 IPv4 目标网段，多项用英文逗号分隔。留空允许全部 IPv4 目标。仅访问局域网时填写 LAN 网段，例如 192.168.0.0/24。全局上网还需在客户端开启全隧道。</small></div>
     </div>
-    <template id="dns-row-template">{{template "dns-row" ""}}</template>
-    <button class="button dns-add" type="button" id="add-dns">＋ 添加 DNS</button>
-    <small id="dns-help">每行填写一个 IPv4 DNS 地址。全部留空时，NAT 使用 1.1.1.1 和 8.8.8.8，Proxy ARP 使用地址池所在 /24 的 .1 和 1.1.1.1。网关提供 DNS 时，可以填写它的地址。</small>
-    <label for="routes">VPN 路由范围</label>
-    <input id="routes" name="VPN_ROUTES" value="{{.Settings.VPN_ROUTES}}" placeholder="0.0.0.0/0" autocomplete="off" spellcheck="false">
-    <small>填写允许通过 VPN 访问的 IPv4 目标网段，多项用英文逗号分隔。两种模式留空都使用 0.0.0.0/0，允许全部 IPv4 目标。只访问家里时可填写 LAN 网段，例如 192.168.0.0/24。全局上网还需在客户端开启全隧道。</small>
   </fieldset>
   <fieldset data-vpn-mode="nat" {{if eq .Settings.VPN_MODE "proxyarp"}}hidden{{end}}>
     <legend>NAT 模式</legend>
@@ -53,12 +57,14 @@
     <label for="proxy-pool">客户端地址池</label>
     <input id="proxy-pool" name="PROXYARP_POOL" value="{{.Settings.PROXYARP_POOL}}" placeholder="192.168.0.201-192.168.0.210" autocomplete="off" spellcheck="false">
     <small>填写局域网内的一个地址范围或对齐的 IPv4 CIDR，例如 192.168.0.201-192.168.0.210 或 192.168.0.240/29。排除 DHCP 地址、已占用地址及局域网的网络和广播地址。留空使用示例中的地址范围。</small>
-    <label for="lan">局域网网段</label>
-    <input id="lan" name="PROXYARP_LAN" value="{{.Settings.PROXYARP_LAN}}" placeholder="192.168.0.0/24" autocomplete="off" spellcheck="false">
-    <small>填写宿主机所在局域网的网段。留空时从地址池推导 /24，例如 192.168.0.0/24。实际网段使用其他掩码时请手动填写。</small>
-    <label for="gateway">网关</label>
-    <input id="gateway" name="PROXYARP_GATEWAY" value="{{.Settings.PROXYARP_GATEWAY}}" placeholder="192.168.0.1" autocomplete="off" spellcheck="false">
-    <small>填写发往局域网以外的 VPN 流量的下一跳。网关必须与宿主机直连，地址位于局域网内、地址池外，且与宿主机地址不同。网关需支持转发，并提供 NAT 或正确的回程路由。留空使用宿主机原有路由。</small>
+    <div class="settings-grid">
+      <div><label for="lan">局域网网段</label>
+        <input id="lan" name="PROXYARP_LAN" value="{{.Settings.PROXYARP_LAN}}" placeholder="192.168.0.0/24" autocomplete="off" spellcheck="false">
+        <small>填写宿主机所在局域网的网段。留空时从地址池推导 /24，例如 192.168.0.0/24。实际网段使用其他掩码时请手动填写。</small></div>
+      <div><label for="gateway">网关</label>
+        <input id="gateway" name="PROXYARP_GATEWAY" value="{{.Settings.PROXYARP_GATEWAY}}" placeholder="192.168.0.1" autocomplete="off" spellcheck="false">
+        <small>填写发往局域网以外的 VPN 流量的下一跳。网关必须与宿主机直连，地址位于局域网内、地址池外，且与宿主机地址不同。网关需支持转发，并提供 NAT 或正确的回程路由。留空使用宿主机原有路由。</small></div>
+    </div>
   </fieldset>
   <footer><button class="button primary" type="submit">保存设置</button></footer>
 </form>

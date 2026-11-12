@@ -13,11 +13,11 @@ import (
 )
 
 type Session struct {
-	ID      string
-	Account string
-	Address string
-	Peer    string
-	Traffic map[string]Traffic
+	ID      string             `json:"id"`
+	Account string             `json:"account"`
+	Address string             `json:"address"`
+	Peer    string             `json:"peer"`
+	Traffic map[string]Traffic `json:"traffic"`
 }
 
 type Traffic struct {

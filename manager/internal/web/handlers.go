@@ -164,12 +164,11 @@ func (s *Server) traffic(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "读取会话速度失败", http.StatusServiceUnavailable)
 		return
 	}
-	counters := make(map[string]map[string]vpn.Traffic, len(sessions))
-	for _, session := range sessions {
-		counters[session.ID] = session.Traffic
+	if sessions == nil {
+		sessions = []vpn.Session{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(counters)
+	json.NewEncoder(w).Encode(sessions)
 }
 
 func render(w http.ResponseWriter, name string, data page) {

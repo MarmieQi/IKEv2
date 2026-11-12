@@ -20,8 +20,6 @@ for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => button.closest('dialog').close());
 }
 
-const sessionRows = document.querySelectorAll('[data-traffic-session]');
-
 function formatSpeed(bitsPerSecond) {
   if (bitsPerSecond >= 1e9) return (bitsPerSecond / 1e9).toFixed(2) + ' Gbps';
   if (bitsPerSecond >= 1e6) return (bitsPerSecond / 1e6).toFixed(2) + ' Mbps';
@@ -29,48 +27,86 @@ function formatSpeed(bitsPerSecond) {
   return Math.round(bitsPerSecond) + ' bps';
 }
 
-function showSpeeds(current, previous, seconds) {
-  for (const row of sessionRows) {
-    const id = row.dataset.trafficSession;
-    let upload = 0;
-    let download = 0;
-    let measured = false;
-    for (const [child, counter] of Object.entries(current[id] || {})) {
-      const before = previous[id]?.[child];
-      if (!before || counter.upload < before.upload || counter.download < before.download) continue;
-      upload += counter.upload - before.upload;
-      download += counter.download - before.download;
-      measured = true;
-    }
-    row.querySelector('[data-upload]').textContent = measured ? formatSpeed(upload * 8 / seconds) : '—';
-    row.querySelector('[data-download]').textContent = measured ? formatSpeed(download * 8 / seconds) : '—';
+function showSpeeds(row, current, previous, seconds) {
+  let upload = 0;
+  let download = 0;
+  let measured = false;
+  for (const [child, counter] of Object.entries(current || {})) {
+    const before = previous?.[child];
+    if (!before || counter.upload < before.upload || counter.download < before.download) continue;
+    upload += counter.upload - before.upload;
+    download += counter.download - before.download;
+    measured = true;
   }
+  row.querySelector('[data-upload]').textContent = measured ? formatSpeed(upload * 8 / seconds) : '—';
+  row.querySelector('[data-download]').textContent = measured ? formatSpeed(download * 8 / seconds) : '—';
 }
 
-if (sessionRows.length > 0) {
-  let previous = {};
+const sessionList = document.getElementById('session-list');
+if (sessionList) {
+  const rowTemplate = document.getElementById('session-row-template');
+  const empty = document.getElementById('session-empty');
+  const count = document.getElementById('session-count');
+  const error = document.getElementById('session-error');
+  const rows = new Map(Array.from(sessionList.querySelectorAll('[data-traffic-session]'),
+    row => [row.dataset.trafficSession, row]));
+  let previous = new Map();
   let sampledAt = 0;
-  async function sampleSpeeds() {
+  let timer;
+  let refreshing = false;
+
+  async function refreshSessions() {
+    if (document.hidden || refreshing) return;
+    refreshing = true;
     try {
-      if (document.hidden) {
-        previous = {};
-        return;
-      }
       const response = await fetch('/sessions/traffic', { redirect: 'error' });
       if (!response.ok) throw new Error('Traffic request failed');
-      const current = await response.json();
+      const sessions = await response.json();
+      if (document.hidden) return;
       const now = performance.now();
-      showSpeeds(current, previous, (now - sampledAt) / 1000);
+      const current = new Map();
+      for (const session of sessions) {
+        let row = rows.get(session.id);
+        if (!row) {
+          row = rowTemplate.content.firstElementChild.cloneNode(true);
+          row.dataset.trafficSession = session.id;
+          sessionList.insertBefore(row, empty);
+          rows.set(session.id, row);
+        }
+        row.querySelector('[data-session-account]').textContent = session.account;
+        row.querySelector('[data-session-address]').textContent = session.address;
+        row.querySelector('[data-session-peer]').textContent = session.peer;
+        showSpeeds(row, session.traffic, previous.get(session.id), (now - sampledAt) / 1000);
+        current.set(session.id, session.traffic);
+      }
+      for (const [id, row] of rows) {
+        if (current.has(id)) continue;
+        row.remove();
+        rows.delete(id);
+      }
+      empty.hidden = sessions.length > 0;
+      empty.firstElementChild.textContent = '当前没有在线连接。';
+      count.textContent = sessions.length;
+      error.hidden = true;
       previous = current;
       sampledAt = now;
     } catch {
-      previous = {};
-      showSpeeds({}, {}, 1);
+      previous.clear();
+      for (const row of rows.values()) showSpeeds(row, null, null, 1);
+      empty.firstElementChild.textContent = '在线会话暂不可用。';
+      count.textContent = '—';
+      error.hidden = false;
     } finally {
-      setTimeout(sampleSpeeds, 2000);
+      refreshing = false;
+      if (!document.hidden) timer = setTimeout(refreshSessions, 2000);
     }
   }
-  sampleSpeeds();
+  document.addEventListener('visibilitychange', () => {
+    clearTimeout(timer);
+    previous.clear();
+    refreshSessions();
+  });
+  refreshSessions();
 }
 const vpnMode = document.querySelector('select[name="VPN_MODE"]');
 if (vpnMode) {

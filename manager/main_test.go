@@ -138,11 +138,19 @@ func TestManagedAccounts(t *testing.T) {
 	if err != nil || len(sessions) != 1 || sessions[0].ID != "2" {
 		t.Fatal("disabling old account should disconnect only its session")
 	}
+	if response := send("GET", "/sessions/traffic", nil, cookie); response.Code != 200 ||
+		!strings.Contains(response.Body.String(), `"account":"second"`) ||
+		!strings.Contains(response.Body.String(), `"traffic":`) {
+		t.Fatal("session refresh must include account details and traffic")
+	}
 	if response := send("POST", "/accounts", url.Values{"action": {"disable"}, "username": {"second"}}, cookie); response.Code != 303 {
 		t.Fatalf("disabling second account failed: %d", response.Code)
 	}
 	if response := send("GET", "/sessions", nil, cookie); response.Code != 200 || !strings.Contains(response.Body.String(), "当前没有在线连接") {
 		t.Fatal("session page did not show empty state")
+	}
+	if response := send("GET", "/sessions/traffic", nil, cookie); response.Code != 200 || strings.TrimSpace(response.Body.String()) != "[]" {
+		t.Fatal("session refresh must return an empty list after all sessions end")
 	}
 	if response := send("POST", "/logout", nil, cookie); response.Header().Get("Location") != "/login" {
 		t.Fatal("logout did not redirect to login")
