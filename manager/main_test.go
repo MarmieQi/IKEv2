@@ -59,6 +59,9 @@ func TestManagedAccounts(t *testing.T) {
 	send := func(method, path string, form url.Values, cookie *http.Cookie) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if method == "POST" {
+			request.Header.Set("Origin", "http://"+request.Host)
+		}
 		if cookie != nil {
 			request.AddCookie(cookie)
 		}
@@ -75,6 +78,10 @@ func TestManagedAccounts(t *testing.T) {
 		if response.Code != 303 || response.Header().Get("Location") != "/login" {
 			t.Fatalf("anonymous %s %s was not redirected to login", endpoint.method, endpoint.path)
 		}
+	}
+	loginPage := send("GET", "/login", nil, nil)
+	if loginPage.Header().Get("Referrer-Policy") != "same-origin" {
+		t.Fatal("login page must preserve Origin for same-origin form submissions")
 	}
 	login := send("POST", "/login", url.Values{"username": {"admin"}, "password": {"test-admin-password"}}, nil)
 	if login.Code != 303 || len(login.Result().Cookies()) != 1 {
