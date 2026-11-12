@@ -23,8 +23,7 @@
         {{template "vpn-settings" .}}
       {{else}}
       <header class="page-header">
-        <div><h1>{{if eq .Tab "accounts"}}账号管理{{else}}在线会话{{end}}</h1>
-        {{if eq .Tab "accounts"}}<p>管理 VPN 登录账号和访问权限。</p>{{end}}</div>
+        <h1>{{if eq .Tab "accounts"}}账号管理{{else}}在线会话{{end}}</h1>
         {{if eq .Tab "accounts"}}<button type="button" class="button primary" data-open="add-dialog"><span class="plus">+</span> 添加账号</button>
         {{else}}<a class="button" href="/sessions">刷新列表</a>{{end}}
       </header>

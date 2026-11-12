@@ -6,8 +6,6 @@
   <div class="message error" role="alert">{{.Error}}</div>
 {{else if .SettingsPending}}
   <div class="message" role="status">已保存，待重启生效。</div>
-{{else}}
-  <div class="message success" role="status">当前设置已生效。</div>
 {{end}}
 <form class="panel settings-form" action="/settings" method="post">
   <fieldset>
