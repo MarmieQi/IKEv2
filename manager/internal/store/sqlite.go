@@ -81,7 +81,7 @@ func (s *Store) Prepare(ctx context.Context) error {
 }
 
 func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT name, nt_hash, enabled, pending, max_sessions, upload_mbps, download_mbps FROM accounts ORDER BY name")
+	rows, err := s.db.QueryContext(ctx, "SELECT name, nt_hash, enabled, pending, max_sessions, upload_mbps, download_mbps FROM accounts ORDER BY rowid")
 	if err != nil {
 		return nil, err
 	}

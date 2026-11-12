@@ -145,8 +145,18 @@ func TestManagedAccounts(t *testing.T) {
 			t.Fatalf("account action %s failed: %d", change.Get("action"), response.Code)
 		}
 	}
-	if response := send("GET", "/", nil, cookie); response.Code != 200 || !strings.Contains(response.Body.String(), `data-account="admin"`) {
-		t.Fatal("VPN account sharing the administrator name is missing from the dashboard")
+	dashboard := send("GET", "/", nil, cookie)
+	if dashboard.Code != http.StatusOK {
+		t.Fatalf("loading account dashboard failed: %d", dashboard.Code)
+	}
+	body := dashboard.Body.String()
+	previous := -1
+	for _, name := range []string{"old", "second", "admin"} {
+		position := strings.Index(body, `data-account="`+name+`"`)
+		if position <= previous {
+			t.Fatalf("account %q is missing or out of insertion order", name)
+		}
+		previous = position
 	}
 	old, err := db.Account(ctx, "old")
 	if err != nil || old.Enabled || old.Pending {
