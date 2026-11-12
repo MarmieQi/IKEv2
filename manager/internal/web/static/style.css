@@ -59,7 +59,6 @@ th, td { padding: 13px 20px; border-top: 1px solid var(--line); }
 th { background: #f7f9f6; color: var(--muted); font-size: 12px; font-weight: 650; }
 td { height: 59px; }
 tbody tr:hover { background: #fafbf9; }
-.identity { display: flex; gap: 10px; align-items: center; }
 .pill { display: inline-flex; gap: 6px; align-items: center; background: #edf0ed; color: #526058; padding: 4px 9px; border-radius: 20px; font-size: 12px; font-weight: 650; }
 .pill.active { background: #e6f6ed; color: #147447; }
 .pill.waiting { background: #fff2d8; color: #794700; }

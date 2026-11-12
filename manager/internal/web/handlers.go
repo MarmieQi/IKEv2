@@ -45,7 +45,6 @@ type Server struct {
 type row struct {
 	store.Account
 	Connections int
-	Initial     string
 }
 
 type page struct {
@@ -314,7 +313,7 @@ func (s *Server) show(w http.ResponseWriter, r *http.Request, problem string, up
 		counts[strings.ToLower(item.Account)]++
 	}
 	for _, item := range items {
-		data.Rows = append(data.Rows, row{item, counts[strings.ToLower(item.Name)], strings.ToUpper(item.Name[:1])})
+		data.Rows = append(data.Rows, row{item, counts[strings.ToLower(item.Name)]})
 		if item.Enabled {
 			data.Enabled++
 		}
