@@ -25,6 +25,7 @@ ip link set lan0 up
 ip addr add 192.168.0.2/24 dev lan0
 # Host rules must survive every restart and failed startup.
 iptables -P INPUT DROP
+iptables -A INPUT -i lo -j ACCEPT
 iptables -A INPUT -s 203.0.113.1 -j ACCEPT
 original_filter="$(iptables -S)"
 original_nat="$(iptables -t nat -S)"
@@ -96,4 +97,22 @@ stop_server
 printf 'VPN_DOMAIN=vpn.example.com\nVPN_MODE=invalid\n' > /run/ikev2-config/.env
 if bash /start.sh > /tmp/ikev2-start.log 2>&1; then fail 'invalid configuration started'; fi
 [[ ! -e /run/ikev2.ready && "$(iptables -S)" == "$original_filter" ]] || fail 'failed startup changed host rules'
-echo 'PASS: real strongSwan startup, accounts, NAT/Proxy ARP, gateway reload, mode switch and shutdown'
+
+# Exercise the default mode, including credentials owned by another NAS user.
+unset IKEV2_ACCOUNT_MODE
+mkdir -p /data
+printf 'admin:disposable-test-password\n' > /etc/ikev2/users.txt
+chmod 600 /etc/ikev2/users.txt
+chown 65534:65534 /etc/ikev2/users.txt
+write_config nat ''
+start_server
+[[ -s /data/manager.db ]] || fail 'managed database missing'
+timeout 3 bash -c '
+    exec 3<>/dev/tcp/127.0.0.1/8787
+    printf "GET /login HTTP/1.0\r\n\r\n" >&3
+    grep -q "^HTTP/1.[01] 200 " <&3
+' || fail 'managed login page unavailable'
+nft list table ip ikev2_account_policy >/dev/null || fail 'account policy table missing'
+stop_server
+if nft list table ip ikev2_account_policy >/dev/null 2>&1; then fail 'stale account policy table'; fi
+echo 'PASS: real strongSwan startup, account modes, NAT/Proxy ARP, gateway reload, and shutdown'

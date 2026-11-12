@@ -85,7 +85,7 @@ func run(args []string) error {
 		return err
 	}
 	service := &accounts.Service{Store: db, VPN: controller}
-	if err := service.ApplyAll(ctx, items); err != nil {
+	if err := service.LoadAtStartup(ctx, items); err != nil {
 		return err
 	}
 	return serve(&web.Server{

@@ -40,10 +40,18 @@ type Service struct {
 	mu    sync.Mutex
 }
 
-func (s *Service) ApplyAll(ctx context.Context, items []store.Account) error {
+// LoadAtStartup restores credentials to a fresh strongSwan instance.
+func (s *Service) LoadAtStartup(ctx context.Context, items []store.Account) error {
 	for _, account := range items {
-		if err := s.apply(ctx, account); err != nil {
-			return err
+		if account.Enabled {
+			if err := s.VPN.Apply(ctx, account); err != nil {
+				return fmt.Errorf("加载 VPN 账号 %s: %w", account.Name, err)
+			}
+		}
+		if account.Pending {
+			if err := s.Store.Applied(ctx, account.Name); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

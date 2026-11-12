@@ -60,7 +60,7 @@ func Start(ctx context.Context, gateway vpn.Gateway, pool string, accounts []sto
 	for _, account := range accounts {
 		p.accounts[strings.ToLower(account.Name)] = account
 	}
-	if err := p.program(ctx); err != nil {
+	if err := program(ctx, p.baseRules()); err != nil {
 		return nil, err
 	}
 	listener, err := net.Listen("unix", socket)
@@ -79,16 +79,24 @@ func (p *Controller) Apply(ctx context.Context, account store.Account) error {
 	name := strings.ToLower(account.Name)
 	p.mu.Lock()
 	previous := p.accounts[name]
-	p.accounts[name] = account
-	if previous.UploadMbps != account.UploadMbps || previous.DownloadMbps != account.DownloadMbps {
-		if err := p.program(ctx); err != nil {
-			p.accounts[name] = previous
+	if rules := rateRules(name, previous.Limits, account.Limits); rules != "" && p.hasActive(name) {
+		if err := program(ctx, rules); err != nil {
 			p.mu.Unlock()
 			return err
 		}
 	}
+	p.accounts[name] = account
 	p.mu.Unlock()
 	return p.Gateway.Apply(ctx, account)
+}
+
+func (p *Controller) hasActive(name string) bool {
+	for _, item := range p.active {
+		if item.name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Controller) listen(listener net.Listener) {
@@ -152,11 +160,11 @@ func (p *Controller) handle(ctx context.Context, req request) error {
 				return err
 			}
 		}
-		p.active[address] = link{name, req.IKE, req.Req}
-		if err := p.program(ctx); err != nil {
-			delete(p.active, address)
+		first := !p.hasActive(name)
+		if err := program(ctx, sessionRules(name, address, p.accounts[name].Limits, true, first)); err != nil {
 			return err
 		}
+		p.active[address] = link{name, req.IKE, req.Req}
 		delete(p.pending, req.IKE)
 	case "down":
 		// CHILD rekeys retain the request ID even if the IKE ID changed.
@@ -164,7 +172,8 @@ func (p *Controller) handle(ctx context.Context, req request) error {
 			return nil
 		}
 		delete(p.active, address)
-		if err := p.program(ctx); err != nil {
+		last := !p.hasActive(name)
+		if err := program(ctx, sessionRules(name, address, store.Limits{}, false, last)); err != nil {
 			// A stale IP mapping can transfer a limit to another account.
 			log.Fatalf("清理 VPN 地址 %s 的限速规则失败: %v", address, err)
 		}

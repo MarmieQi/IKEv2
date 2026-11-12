@@ -2,11 +2,13 @@ package policy
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/netip"
 	"os/exec"
-	"slices"
 	"strings"
+
+	"ikev2/manager/internal/store"
 )
 
 const table = "ikev2_account_policy"
@@ -26,56 +28,74 @@ func normalizePool(value string) (string, error) {
 	return "", fmt.Errorf("无效的 VPN IPv4 地址池")
 }
 
-func (p *Controller) program(ctx context.Context) error {
+func program(ctx context.Context, rules string) error {
 	command := exec.CommandContext(ctx, "nft", "-f", "-")
-	command.Stdin = strings.NewReader(p.rules())
+	command.Stdin = strings.NewReader(rules)
 	if out, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf("应用账号限速规则: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-func (p *Controller) rules() string {
+func (p *Controller) baseRules() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "add table ip %s\ndelete table ip %s\ntable ip %s {\n", table, table, table)
-	addresses := make([]netip.Addr, 0, len(p.active))
-	for address := range p.active {
-		addresses = append(addresses, address)
-	}
-	slices.SortFunc(addresses, netip.Addr.Compare)
-	for _, direction := range []string{"upload", "download"} {
-		chains := make(map[string]string)
-		var elements []string
-		for _, address := range addresses {
-			name := p.active[address].name
-			account := p.accounts[name]
-			rate := account.UploadMbps
-			if direction == "download" {
-				rate = account.DownloadMbps
-			}
-			verdict := "return"
-			if rate != 0 {
-				chain, exists := chains[name]
-				if !exists {
-					chain = fmt.Sprintf("%s_%d", direction, len(chains))
-					chains[name] = chain
-					fmt.Fprintf(&b, " chain %s { limit rate over %d bytes/second counter drop; }\n", chain, rate*125000)
-				}
-				verdict = "goto " + chain
-			}
-			elements = append(elements, address.String()+" : "+verdict)
-		}
-		fmt.Fprintf(&b, " map %s { type ipv4_addr : verdict;", direction)
-		if len(elements) > 0 {
-			fmt.Fprintf(&b, " elements = { %s };", strings.Join(elements, ", "))
-		}
-		b.WriteString(" }\n")
-	}
+	b.WriteString(" map upload { type ipv4_addr : verdict; }\n map download { type ipv4_addr : verdict; }\n")
 	fmt.Fprintf(&b, " chain from_vpn { ip saddr vmap @upload; ip saddr %s drop; }\n", p.pool)
 	fmt.Fprintf(&b, " chain to_vpn { ip daddr vmap @download; ip daddr %s drop; }\n", p.pool)
 	b.WriteString(" chain input { type filter hook input priority -1; policy accept; meta ipsec exists jump from_vpn; }\n")
 	b.WriteString(" chain output { type filter hook output priority -1; policy accept; rt ipsec exists jump to_vpn; }\n")
 	b.WriteString(" chain forward { type filter hook forward priority -1; policy accept; meta ipsec exists jump from_vpn; rt ipsec exists jump to_vpn; }\n")
 	b.WriteString("}\n")
+	return b.String()
+}
+
+func accountChains(name string) [2]string {
+	id := sha256.Sum256([]byte(name))
+	return [2]string{fmt.Sprintf("up_%x", id), fmt.Sprintf("down_%x", id)}
+}
+
+func writeLimit(b *strings.Builder, chain string, rate int) {
+	if rate > 0 {
+		fmt.Fprintf(b, "add rule ip %s %s limit rate over %d bytes/second counter drop\n", table, chain, int64(rate)*125000)
+	}
+}
+
+func sessionRules(name string, address netip.Addr, limits store.Limits, add, changeChains bool) string {
+	var b strings.Builder
+	chains := accountChains(name)
+	rates := [2]int{limits.UploadMbps, limits.DownloadMbps}
+	for i, direction := range [2]string{"upload", "download"} {
+		chain := chains[i]
+		if add {
+			if changeChains {
+				fmt.Fprintf(&b, "add chain ip %s %s\n", table, chain)
+				writeLimit(&b, chain, rates[i])
+			}
+			fmt.Fprintf(&b, "add element ip %s %s { %s : goto %s }\n", table, direction, address, chain)
+		} else {
+			fmt.Fprintf(&b, "delete element ip %s %s { %s }\n", table, direction, address)
+			if changeChains {
+				fmt.Fprintf(&b, "flush chain ip %s %s\n", table, chain)
+				fmt.Fprintf(&b, "delete chain ip %s %s\n", table, chain)
+			}
+		}
+	}
+	return b.String()
+}
+
+func rateRules(name string, previous, next store.Limits) string {
+	oldRates := [2]int{previous.UploadMbps, previous.DownloadMbps}
+	newRates := [2]int{next.UploadMbps, next.DownloadMbps}
+	if oldRates == newRates {
+		return ""
+	}
+	var b strings.Builder
+	for i, chain := range accountChains(name) {
+		if oldRates[i] != newRates[i] {
+			fmt.Fprintf(&b, "flush chain ip %s %s\n", table, chain)
+			writeLimit(&b, chain, newRates[i])
+		}
+	}
 	return b.String()
 }
