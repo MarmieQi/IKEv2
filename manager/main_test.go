@@ -72,7 +72,7 @@ func TestManagedAccounts(t *testing.T) {
 
 	for _, endpoint := range []struct{ method, path string }{
 		{"GET", "/"}, {"GET", "/settings"}, {"GET", "/sessions"}, {"GET", "/sessions/traffic"},
-		{"POST", "/settings"}, {"POST", "/accounts"}, {"POST", "/sessions/disconnect"}, {"POST", "/logout"},
+		{"POST", "/settings"}, {"POST", "/accounts"}, {"POST", "/logout"},
 	} {
 		response := send(endpoint.method, endpoint.path, nil, nil)
 		if response.Code != 303 || response.Header().Get("Location") != "/login" {
@@ -138,8 +138,8 @@ func TestManagedAccounts(t *testing.T) {
 	if err != nil || len(sessions) != 1 || sessions[0].ID != "2" {
 		t.Fatal("disabling old account should disconnect only its session")
 	}
-	if response := send("POST", "/sessions/disconnect", url.Values{"id": {"2"}}, cookie); response.Code != 303 {
-		t.Fatalf("disconnect failed: %d", response.Code)
+	if response := send("POST", "/accounts", url.Values{"action": {"disable"}, "username": {"second"}}, cookie); response.Code != 303 {
+		t.Fatalf("disabling second account failed: %d", response.Code)
 	}
 	if response := send("GET", "/sessions", nil, cookie); response.Code != 200 || !strings.Contains(response.Body.String(), "当前没有在线连接") {
 		t.Fatal("session page did not show empty state")

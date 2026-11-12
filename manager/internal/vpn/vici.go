@@ -28,7 +28,6 @@ type Traffic struct {
 type Gateway interface {
 	Apply(context.Context, store.Account) error
 	Sessions(context.Context) ([]Session, error)
-	Disconnect(context.Context, string) error
 }
 
 type VICI struct{ Socket string }
@@ -140,27 +139,6 @@ func childTraffic(sa *vici.Message) map[string]Traffic {
 		}
 	}
 	return counters
-}
-
-func (v VICI) Disconnect(ctx context.Context, id string) error {
-	if _, err := strconv.ParseUint(id, 10, 32); err != nil {
-		return errors.New("会话 ID 无效")
-	}
-	session, err := v.connect(ctx)
-	if err != nil {
-		return err
-	}
-	defer session.Close()
-	items, err := list(ctx, session)
-	if err != nil {
-		return err
-	}
-	for _, item := range items {
-		if item.ID == id {
-			return terminate(ctx, session, id)
-		}
-	}
-	return errors.New("会话已离线")
 }
 
 func terminate(ctx context.Context, session *vici.Session, id string) error {

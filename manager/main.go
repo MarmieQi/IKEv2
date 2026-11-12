@@ -247,15 +247,3 @@ func (v *previewVPN) Sessions(context.Context) ([]vpn.Session, error) {
 	}
 	return items, nil
 }
-
-func (v *previewVPN) Disconnect(_ context.Context, id string) error {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	for i, item := range v.items {
-		if item.ID == id {
-			v.items = append(v.items[:i], v.items[i+1:]...)
-			return nil
-		}
-	}
-	return errors.New("会话已离线")
-}

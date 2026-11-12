@@ -78,7 +78,6 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("GET /sessions", s.dashboard)
 	admin.HandleFunc("GET /sessions/traffic", s.traffic)
 	admin.HandleFunc("POST /accounts", s.change)
-	admin.HandleFunc("POST /sessions/disconnect", s.disconnect)
 	admin.HandleFunc("GET /settings", s.vpnSettings)
 	admin.HandleFunc("POST /settings", s.saveSettings)
 	guard := http.NewCrossOriginProtection().Handler(public)
@@ -335,18 +334,4 @@ func (s *Server) change(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/?updated=1", http.StatusSeeOther)
-}
-
-func (s *Server) disconnect(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "表单无效", 400)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := s.Accounts.VPN.Disconnect(ctx, r.PostForm.Get("id")); err != nil {
-		s.show(w, r, fmt.Sprintf("断开失败: %v", err), false)
-		return
-	}
-	http.Redirect(w, r, "/sessions?updated=1", http.StatusSeeOther)
 }

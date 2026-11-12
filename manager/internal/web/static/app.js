@@ -7,7 +7,6 @@ for (const button of document.querySelectorAll('[data-open]')) {
       dialog.querySelector('[data-account-label]').textContent = button.dataset.account;
       if (form.elements.username) form.elements.username.value = button.dataset.account;
     }
-    if (button.dataset.session) form.elements.id.value = button.dataset.session;
     if (button.dataset.maxSessions !== undefined) {
       form.elements.max_sessions.value = button.dataset.maxSessions;
       form.elements.upload_mbps.value = button.dataset.uploadMbps;
@@ -21,7 +20,7 @@ for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => button.closest('dialog').close());
 }
 
-const speedCells = document.querySelectorAll('[data-traffic-session]');
+const sessionRows = document.querySelectorAll('[data-traffic-session]');
 
 function formatSpeed(bitsPerSecond) {
   if (bitsPerSecond >= 1e9) return (bitsPerSecond / 1e9).toFixed(2) + ' Gbps';
@@ -31,8 +30,8 @@ function formatSpeed(bitsPerSecond) {
 }
 
 function showSpeeds(current, previous, seconds) {
-  for (const cell of speedCells) {
-    const id = cell.dataset.trafficSession;
+  for (const row of sessionRows) {
+    const id = row.dataset.trafficSession;
     let upload = 0;
     let download = 0;
     let measured = false;
@@ -43,12 +42,12 @@ function showSpeeds(current, previous, seconds) {
       download += counter.download - before.download;
       measured = true;
     }
-    cell.querySelector('[data-upload]').textContent = measured ? formatSpeed(upload * 8 / seconds) : '—';
-    cell.querySelector('[data-download]').textContent = measured ? formatSpeed(download * 8 / seconds) : '—';
+    row.querySelector('[data-upload]').textContent = measured ? formatSpeed(upload * 8 / seconds) : '—';
+    row.querySelector('[data-download]').textContent = measured ? formatSpeed(download * 8 / seconds) : '—';
   }
 }
 
-if (speedCells.length > 0) {
+if (sessionRows.length > 0) {
   let previous = {};
   let sampledAt = 0;
   async function sampleSpeeds() {

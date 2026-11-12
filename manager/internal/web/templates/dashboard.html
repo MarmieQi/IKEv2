@@ -24,7 +24,7 @@
       {{else}}
       <header class="page-header">
         <div><h1>{{if eq .Tab "accounts"}}账号管理{{else}}在线会话{{end}}</h1>
-        <p>{{if eq .Tab "accounts"}}管理 VPN 登录账号和访问权限。{{else}}查看当前建立的 VPN 连接，或断开指定会话。{{end}}</p></div>
+        <p>{{if eq .Tab "accounts"}}管理 VPN 登录账号和访问权限。{{else}}查看当前 VPN 连接和实时网速。{{end}}</p></div>
         {{if eq .Tab "accounts"}}<button type="button" class="button primary" data-open="add-dialog"><span class="plus">+</span> 添加账号</button>
         {{else}}<a class="button" href="/sessions">刷新列表</a>{{end}}
       </header>
@@ -94,23 +94,15 @@
       <section class="panel" aria-labelledby="sessions-title">
         <header><h2 id="sessions-title">当前连接</h2></header>
         <div class="table-scroll"><table>
-          <thead><tr><th>账号</th><th>VPN 地址</th><th>对端地址</th><th>实时网速</th><th class="actions">操作</th></tr></thead>
+          <thead><tr><th>账号</th><th>VPN 地址</th><th>对端地址</th><th>上传速度</th><th>下载速度</th></tr></thead>
           <tbody>{{range .Sessions}}
-          <tr><td><strong>{{.Account}}</strong></td><td class="mono" data-label="VPN 地址">{{.Address}}</td><td class="mono" data-label="对端地址">{{.Peer}}</td>
-            <td class="session-speed" data-label="实时网速" data-traffic-session="{{.ID}}">
-              <div>上传 <span data-upload>—</span></div>
-              <div>下载 <span data-download>—</span></div>
-            </td>
-            <td class="actions"><button type="button" class="text-button danger-text" data-open="disconnect-dialog" data-account="{{.Account}}" data-session="{{.ID}}">断开连接</button></td></tr>
+          <tr data-traffic-session="{{.ID}}"><td><strong>{{.Account}}</strong></td><td class="mono" data-label="VPN 地址">{{.Address}}</td><td class="mono" data-label="对端地址">{{.Peer}}</td>
+            <td class="session-speed" data-label="上传速度" data-upload>—</td>
+            <td class="session-speed" data-label="下载速度" data-download>—</td>
+          </tr>
           {{else}}<tr><td colspan="5" class="empty">{{if .SessionError}}在线会话暂不可用。{{else}}当前没有在线连接。{{end}}</td></tr>{{end}}</tbody>
         </table></div>
       </section>
-      <dialog id="disconnect-dialog">
-        <form method="post" action="/sessions/disconnect">
-          <h2>断开连接</h2><p>结束 <strong data-account-label></strong> 的这条 VPN 会话。</p><input type="hidden" name="id">
-          <footer><button class="button" type="button" data-close autofocus>取消</button><button class="button danger">确认断开</button></footer>
-        </form>
-      </dialog>
       {{end}}
       {{end}}
     </div>
