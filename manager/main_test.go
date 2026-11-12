@@ -162,7 +162,7 @@ func TestManagedAccounts(t *testing.T) {
 	if err != nil || old.Enabled || old.Pending {
 		t.Fatalf("unexpected persisted disabled state: enabled=%v pending=%v error=%v", old.Enabled, old.Pending, err)
 	}
-	sessions, err := gateway.Sessions(ctx)
+	sessions, err := gateway.Sessions(ctx, false)
 	if err != nil || len(sessions) != 1 || sessions[0].ID != "2" {
 		t.Fatal("disabling old account should disconnect only its session")
 	}

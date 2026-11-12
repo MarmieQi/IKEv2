@@ -27,7 +27,7 @@ type Traffic struct {
 
 type Gateway interface {
 	Apply(context.Context, store.Account) error
-	Sessions(context.Context) ([]Session, error)
+	Sessions(ctx context.Context, includeTraffic bool) ([]Session, error)
 }
 
 type VICI struct{ Socket string }
@@ -69,7 +69,7 @@ func (v VICI) Apply(ctx context.Context, account store.Account) error {
 	if err := call(ctx, session, "unload-shared", map[string]any{"id": id}); err != nil {
 		return err
 	}
-	items, err := list(ctx, session)
+	items, err := list(ctx, session, false)
 	if err != nil {
 		return err
 	}
@@ -83,16 +83,16 @@ func (v VICI) Apply(ctx context.Context, account store.Account) error {
 	return nil
 }
 
-func (v VICI) Sessions(ctx context.Context) ([]Session, error) {
+func (v VICI) Sessions(ctx context.Context, includeTraffic bool) ([]Session, error) {
 	session, err := v.connect(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer session.Close()
-	return list(ctx, session)
+	return list(ctx, session, includeTraffic)
 }
 
-func list(ctx context.Context, session *vici.Session) ([]Session, error) {
+func list(ctx context.Context, session *vici.Session, includeTraffic bool) ([]Session, error) {
 	var items []Session
 	for message, err := range session.CallStreaming(ctx, "list-sas", "list-sa", nil) {
 		if err != nil {
@@ -113,7 +113,11 @@ func list(ctx context.Context, session *vici.Session) ([]Session, error) {
 		if id == "" || account == "" {
 			return nil, errors.New("VPN 会话缺少标识或 EAP 账号")
 		}
-		items = append(items, Session{ID: id, Account: account, Address: strings.Join(addresses, ", "), Peer: peer, Traffic: childTraffic(sa)})
+		item := Session{ID: id, Account: account, Address: strings.Join(addresses, ", "), Peer: peer}
+		if includeTraffic {
+			item.Traffic = childTraffic(sa)
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }

@@ -178,7 +178,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) traffic(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
-	sessions, err := s.Accounts.VPN.Sessions(ctx)
+	sessions, err := s.Accounts.VPN.Sessions(ctx, true)
 	if err != nil {
 		http.Error(w, "读取会话速度失败", http.StatusServiceUnavailable)
 		return
@@ -302,7 +302,7 @@ func (s *Server) show(w http.ResponseWriter, r *http.Request, problem string, up
 		http.Error(w, "读取账号失败", 500)
 		return
 	}
-	sessions, err := s.Accounts.VPN.Sessions(ctx)
+	sessions, err := s.Accounts.VPN.Sessions(ctx, false)
 	if err != nil {
 		log.Printf("list VPN sessions: %v", err)
 		data.SessionError = true

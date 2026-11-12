@@ -5,7 +5,7 @@ for (const button of document.querySelectorAll('[data-open]')) {
     form.reset();
     if (button.dataset.account) {
       dialog.querySelector('[data-account-label]').textContent = button.dataset.account;
-      if (form.elements.username) form.elements.username.value = button.dataset.account;
+      form.elements.username.value = button.dataset.account;
     }
     if (button.dataset.maxSessions !== undefined) {
       form.elements.max_sessions.value = button.dataset.maxSessions;
@@ -148,7 +148,7 @@ if (sessionList) {
     previous.clear();
     refreshSessions();
   });
-  refreshSessions();
+  if (!document.hidden) timer = setTimeout(refreshSessions, 2000);
 }
 const vpnMode = document.querySelector('select[name="VPN_MODE"]');
 if (vpnMode) {

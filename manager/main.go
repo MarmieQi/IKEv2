@@ -254,14 +254,17 @@ func (v *previewVPN) Apply(_ context.Context, account store.Account) error {
 	return nil
 }
 
-func (v *previewVPN) Sessions(context.Context) ([]vpn.Session, error) {
+func (v *previewVPN) Sessions(_ context.Context, includeTraffic bool) ([]vpn.Session, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	items := append([]vpn.Session(nil), v.items...)
+	if !includeTraffic {
+		return items, nil
+	}
 	if v.start.IsZero() {
 		v.start = time.Now()
 	}
 	elapsed := time.Since(v.start).Seconds()
-	items := append([]vpn.Session(nil), v.items...)
 	for i := range items {
 		items[i].Traffic = map[string]vpn.Traffic{
 			"demo": {Upload: uint64(elapsed * 87500), Download: uint64(elapsed * 575000)},
