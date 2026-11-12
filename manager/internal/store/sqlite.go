@@ -30,9 +30,6 @@ type Store struct {
 }
 
 const schema = `
-PRAGMA secure_delete = ON;
-DROP TABLE IF EXISTS admin;
-DROP TABLE IF EXISTS admin_names;
 CREATE TABLE IF NOT EXISTS accounts (
     name TEXT PRIMARY KEY COLLATE NOCASE,
     nt_hash BLOB NOT NULL CHECK (length(nt_hash) = 16),
@@ -45,8 +42,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE TABLE IF NOT EXISTS vpn_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     configuration TEXT NOT NULL
-);
-PRAGMA user_version = 4;`
+);`
 
 func Open(path, admin string) (*Store, error) {
 	dsn := ":memory:"

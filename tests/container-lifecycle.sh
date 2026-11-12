@@ -3,6 +3,7 @@
 # Exercises the real entrypoint, Debian strongSwan, kernel rules, restart and shutdown.
 set -euo pipefail
 [[ "${IKEV2_DISPOSABLE_TEST:-}" == yes ]] || { echo 'Disposable environment required' >&2; exit 1; }
+export IKEV2_ACCOUNT_MODE=file
 pid=''
 cleanup() {
     if [[ -n "$pid" ]]; then kill -TERM "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi

@@ -15,8 +15,6 @@ cleanup() {
     if [[ -n "$MANAGER_PID" ]]; then
         kill "$MANAGER_PID" 2>/dev/null || true
         wait "$MANAGER_PID" 2>/dev/null || true
-    fi
-    if [[ "${ACCOUNT_MODE:-}" == managed && -n "$MANAGER_PID" ]]; then
         printf '%s\n' 'add table ip ikev2_account_policy' 'delete table ip ikev2_account_policy' | nft -f - ||
             echo '错误: 账号限速规则清理未完成' >&2
         rm -f /run/ikev2-policy.sock
@@ -32,7 +30,7 @@ rm -f /run/ikev2.ready
 
 declare -A RAW=() CONFIG=()
 declare -a USER_NAMES=() USER_HASHES=()
-ACCOUNT_MODE="${IKEV2_ACCOUNT_MODE:-file}"
+ACCOUNT_MODE="${IKEV2_ACCOUNT_MODE:-managed}"
 config_file="${IKEV2_CONFIG_FILE:-/run/ikev2-config/.env}"
 case "$ACCOUNT_MODE" in
     file) runtime_config_load "$config_file" RAW ;;

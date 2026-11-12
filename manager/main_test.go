@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"database/sql"
+
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
@@ -162,41 +162,6 @@ func TestManagedAccounts(t *testing.T) {
 	}
 	if err := db.Add(ctx, store.Account{Name: "ADMIN", Hash: expected}); err == nil {
 		t.Fatal("administrator name was accepted as a VPN account")
-	}
-}
-
-func TestPrepareRemovesStoredAdministrator(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "manager.db")
-	db, err := store.Open(path, "admin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := db.Prepare(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Add(ctx, store.Account{Name: "vpn-user", Hash: make([]byte, 16)}); err != nil {
-		t.Fatal(err)
-	}
-	raw, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer raw.Close()
-	if _, err := raw.ExecContext(ctx, "CREATE TABLE admin (password_hash BLOB); INSERT INTO admin VALUES (x'001122'); CREATE TABLE admin_names (name TEXT)"); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Prepare(ctx); err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	err = raw.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE name IN ('admin', 'admin_names')").Scan(&count)
-	if err != nil || count != 0 {
-		t.Fatalf("legacy administrator tables remain: %d, %v", count, err)
-	}
-	if _, err := db.Account(ctx, "vpn-user"); err != nil {
-		t.Fatal(err)
 	}
 }
 
