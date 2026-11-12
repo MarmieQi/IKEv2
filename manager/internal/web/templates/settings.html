@@ -5,7 +5,10 @@
 {{if .Error}}
   <div class="message error" role="alert">{{.Error}}</div>
 {{else if .SettingsPending}}
-  <div class="message" role="status">已保存，待重启生效。</div>
+  <div class="message settings-restart">
+    <span id="restart-status" role="status">已保存，待重启生效。</span>
+    {{if .CanRestart}}<button class="button" type="button" id="restart-settings">重启并应用</button>{{end}}
+  </div>
 {{end}}
 <form class="panel settings-form" action="/settings" method="post">
   <fieldset>

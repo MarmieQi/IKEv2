@@ -146,6 +146,7 @@ footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 23px; }
 .session-speed { font-variant-numeric: tabular-nums; }
 #session-empty[hidden] { display: none; }
 .settings-form { padding: clamp(14px, 3vw, 24px); }
+.settings-restart { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .settings-form input { margin-top: 7px; }
 
 .settings-form fieldset { min-inline-size: 0; border: 0; padding: 0; margin: 0; }

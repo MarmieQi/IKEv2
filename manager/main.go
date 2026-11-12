@@ -143,6 +143,15 @@ func serve(webServer *web.Server) error {
 		return err
 	}
 	defer listener.Close()
+	restart := make(chan struct{}, 1)
+	if !webServer.Preview {
+		webServer.RequestRestart = func() {
+			select {
+			case restart <- struct{}{}:
+			default:
+			}
+		}
+	}
 	server := &http.Server{
 		Handler: webServer.Handler(), ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 30 * time.Second,
@@ -155,7 +164,20 @@ func serve(webServer *web.Server) error {
 		log.Print("IKEv2 已就绪")
 	}
 	log.Printf("管理页面 http://%s", address)
-	return server.Serve(listener)
+	if webServer.Preview {
+		return server.Serve(listener)
+	}
+	serveResult := make(chan error, 1)
+	go func() { serveResult <- server.Serve(listener) }()
+	select {
+	case err := <-serveResult:
+		return err
+	case <-restart:
+		log.Print("管理员请求重启并应用 VPN 设置")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return server.Shutdown(ctx)
+	}
 }
 
 func preview(ctx context.Context) error {

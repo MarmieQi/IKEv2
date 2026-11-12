@@ -163,30 +163,3 @@ done
 	}
 	return Decode(strings.Split(string(output), "\n")), nil
 }
-
-func ValidateHost(ctx context.Context, values store.VPNSettings) error {
-	const script = `
-set -euo pipefail
-source /usr/local/lib/ikev2/runtime-config.sh
-source /usr/local/lib/ikev2/network-config.sh
-source /usr/local/lib/ikev2/certificates.sh
-declare -A INPUT_SETTINGS=() RESOLVED_SETTINGS=()
-for setting in "$@"; do
-    key="${setting%%=*}"
-    runtime_config_key_known "$key" || exit 1
-    INPUT_SETTINGS["$key"]="${setting#*=}"
-done
-network_config_resolve INPUT_SETTINGS RESOLVED_SETTINGS
-network_host_validate RESOLVED_SETTINGS
-certificates_validate "/ssl/${RESOLVED_SETTINGS[cert_file]}" "/ssl/${RESOLVED_SETTINGS[key_file]}" "${RESOLVED_SETTINGS[domain]}"
-`
-	args := append([]string{"-c", script, "vpn-settings"}, Encode(values)...)
-	output, err := exec.CommandContext(ctx, "bash", args...).CombinedOutput()
-	if err != nil {
-		if message := strings.TrimSpace(string(output)); message != "" {
-			return errors.New(message)
-		}
-		return fmt.Errorf("无法校验 NAS 网络和证书配置: %w", err)
-	}
-	return nil
-}

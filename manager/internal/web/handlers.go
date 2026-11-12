@@ -35,6 +35,7 @@ type Server struct {
 	PasswordHash   []byte
 	Preview        bool
 	ActiveSettings store.VPNSettings
+	RequestRestart func()
 	sessionMu      sync.Mutex
 	sessions       map[string]time.Time
 	loginMu        sync.Mutex
@@ -59,6 +60,7 @@ type page struct {
 	Enabled         int
 	Settings        store.VPNSettings
 	SettingsPending bool
+	CanRestart      bool
 	DNSRows         []string
 }
 
@@ -80,6 +82,9 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("POST /accounts", s.change)
 	admin.HandleFunc("GET /settings", s.vpnSettings)
 	admin.HandleFunc("POST /settings", s.saveSettings)
+	if s.RequestRestart != nil {
+		admin.HandleFunc("POST /settings/restart", s.restart)
+	}
 	guard := http.NewCrossOriginProtection().Handler(public)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
@@ -104,8 +109,26 @@ func (s *Server) vpnSettings(w http.ResponseWriter, r *http.Request) {
 	render(w, "dashboard.html", page{
 		Admin: s.Admin, Preview: s.Preview, Tab: "settings",
 		Settings: values, SettingsPending: !maps.Equal(values, s.ActiveSettings),
-		DNSRows: strings.Split(values["VPN_DNS"], ","),
+		CanRestart: s.RequestRestart != nil,
+		DNSRows:    strings.Split(values["VPN_DNS"], ","),
 	})
+}
+
+func (s *Server) restart(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	values, err := s.Accounts.Store.VPNSettings(ctx)
+	if err != nil {
+		log.Printf("读取待应用的 VPN 设置: %v", err)
+		http.Error(w, "读取 VPN 设置失败", http.StatusInternalServerError)
+		return
+	}
+	if maps.Equal(values, s.ActiveSettings) {
+		http.Error(w, "没有待应用的 VPN 设置", http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+	s.RequestRestart()
 }
 
 func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
@@ -135,12 +158,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	input["VPN_DNS"] = strings.Join(dnsAddresses, ",")
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
-	defer cancel()
 	values, err := settings.Parse(input)
-	if err == nil && !s.Preview {
-		err = settings.ValidateHost(ctx, values)
-	}
 	if err != nil {
 		render(w, "dashboard.html", page{
 			Admin: s.Admin, Preview: s.Preview, Tab: "settings", Error: err.Error(),
@@ -148,6 +166,8 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
 	if err := s.Accounts.Store.SaveVPNSettings(ctx, values); err != nil {
 		log.Printf("保存 VPN 设置: %v", err)
 		http.Error(w, "保存 VPN 设置失败", http.StatusInternalServerError)

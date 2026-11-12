@@ -20,6 +20,48 @@ for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => button.closest('dialog').close());
 }
 
+const restartButton = document.getElementById('restart-settings');
+if (restartButton) {
+  const status = document.getElementById('restart-status');
+  restartButton.addEventListener('click', async () => {
+    if (!window.confirm('重启会短暂断开所有 VPN 连接。现在重启？')) return;
+    restartButton.disabled = true;
+    status.textContent = '正在请求重启…';
+    try {
+      const response = await fetch('/settings/restart', { method: 'POST', redirect: 'manual' });
+      if (response.type === 'opaqueredirect') {
+        window.location.assign('/login');
+        return;
+      }
+      if (response.status !== 202) {
+        status.textContent = (await response.text()).trim();
+        restartButton.disabled = false;
+        return;
+      }
+    } catch {
+      status.textContent = '未收到重启回执，请刷新页面确认服务状态。';
+      restartButton.disabled = false;
+      return;
+    }
+
+    status.textContent = '正在重启…';
+    const deadline = Date.now() + 45000;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      try {
+        const response = await fetch('/login', { redirect: 'manual', signal: AbortSignal.timeout(2000) });
+        if (response.ok) {
+          window.location.assign('/login');
+          return;
+        }
+      } catch {
+        // The listener is temporarily unavailable during restart.
+      }
+    }
+    status.textContent = '等待服务恢复超时，请查看容器日志。';
+  });
+}
+
 function formatSpeed(bitsPerSecond) {
   if (bitsPerSecond >= 1e9) return (bitsPerSecond / 1e9).toFixed(2) + ' Gbps';
   if (bitsPerSecond >= 1e6) return (bitsPerSecond / 1e6).toFixed(2) + ' Mbps';

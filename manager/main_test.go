@@ -54,7 +54,11 @@ func TestManagedAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := (&web.Server{Accounts: service, Admin: "admin", PasswordHash: hash, ActiveSettings: active, Preview: true}).Handler()
+	restarts := 0
+	handler := (&web.Server{
+		Accounts: service, Admin: "admin", PasswordHash: hash, ActiveSettings: active,
+		RequestRestart: func() { restarts++ },
+	}).Handler()
 
 	send := func(method, path string, form url.Values, cookie *http.Cookie) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
@@ -72,7 +76,7 @@ func TestManagedAccounts(t *testing.T) {
 
 	for _, endpoint := range []struct{ method, path string }{
 		{"GET", "/"}, {"GET", "/settings"}, {"GET", "/sessions"}, {"GET", "/sessions/traffic"},
-		{"POST", "/settings"}, {"POST", "/accounts"}, {"POST", "/logout"},
+		{"POST", "/settings"}, {"POST", "/settings/restart"}, {"POST", "/accounts"}, {"POST", "/logout"},
 	} {
 		response := send(endpoint.method, endpoint.path, nil, nil)
 		if response.Code != 303 || response.Header().Get("Location") != "/login" {
@@ -88,6 +92,9 @@ func TestManagedAccounts(t *testing.T) {
 		t.Fatalf("login failed: %d", login.Code)
 	}
 	cookie := login.Result().Cookies()[0]
+	if response := send("POST", "/settings/restart", nil, cookie); response.Code != http.StatusConflict || restarts != 0 {
+		t.Fatal("restart must require pending settings")
+	}
 	crossSite := httptest.NewRequest("POST", "/accounts", nil)
 	crossSite.Header.Set("Sec-Fetch-Site", "cross-site")
 	crossSite.AddCookie(cookie)
@@ -104,8 +111,19 @@ func TestManagedAccounts(t *testing.T) {
 	if response := send("POST", "/settings", form, cookie); response.Code != 303 {
 		t.Fatalf("saving VPN settings failed: %d", response.Code)
 	}
-	if response := send("GET", "/settings", nil, cookie); !strings.Contains(response.Body.String(), "待重启生效") {
+	if response := send("GET", "/settings", nil, cookie); !strings.Contains(response.Body.String(), "重启并应用") {
 		t.Fatal("saved settings should be pending until restart")
+	}
+	crossSiteRestart := httptest.NewRequest("POST", "/settings/restart", nil)
+	crossSiteRestart.Header.Set("Sec-Fetch-Site", "cross-site")
+	crossSiteRestart.AddCookie(cookie)
+	restartDenied := httptest.NewRecorder()
+	handler.ServeHTTP(restartDenied, crossSiteRestart)
+	if restartDenied.Code != http.StatusForbidden || restarts != 0 {
+		t.Fatal("cross-site restart was not blocked")
+	}
+	if response := send("POST", "/settings/restart", nil, cookie); response.Code != http.StatusAccepted || restarts != 1 {
+		t.Fatal("authenticated restart with pending settings was not accepted")
 	}
 	form.Set("VPN_ROUTES", "192.168.0.1/24")
 	send("POST", "/settings", form, cookie)
