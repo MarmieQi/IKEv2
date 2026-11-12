@@ -24,10 +24,7 @@ type Limits struct {
 	DownloadMbps int
 }
 
-type Store struct {
-	db    *sql.DB
-	admin string
-}
+type Store struct{ db *sql.DB }
 
 const schema = `
 CREATE TABLE IF NOT EXISTS accounts (
@@ -44,7 +41,7 @@ CREATE TABLE IF NOT EXISTS vpn_settings (
     configuration TEXT NOT NULL
 );`
 
-func Open(path, admin string) (*Store, error) {
+func Open(path string) (*Store, error) {
 	dsn := ":memory:"
 	if path != ":memory:" {
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0600)
@@ -66,7 +63,7 @@ func Open(path, admin string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db, admin: admin}, nil
+	return &Store{db: db}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -84,7 +81,7 @@ func (s *Store) Prepare(ctx context.Context) error {
 }
 
 func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT name, nt_hash, enabled, pending, max_sessions, upload_mbps, download_mbps FROM accounts WHERE name != ? ORDER BY name", s.admin)
+	rows, err := s.db.QueryContext(ctx, "SELECT name, nt_hash, enabled, pending, max_sessions, upload_mbps, download_mbps FROM accounts ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
@@ -102,21 +99,21 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 
 func (s *Store) Account(ctx context.Context, name string) (Account, error) {
 	var account Account
-	err := s.db.QueryRowContext(ctx, "SELECT name, nt_hash, enabled, pending, max_sessions, upload_mbps, download_mbps FROM accounts WHERE name = ? AND name != ?", name, s.admin).
+	err := s.db.QueryRowContext(ctx, "SELECT name, nt_hash, enabled, pending, max_sessions, upload_mbps, download_mbps FROM accounts WHERE name = ?", name).
 		Scan(&account.Name, &account.Hash, &account.Enabled, &account.Pending, &account.MaxSessions, &account.UploadMbps, &account.DownloadMbps)
 	return account, err
 }
 
 func (s *Store) Add(ctx context.Context, account Account) error {
 	result, err := s.db.ExecContext(ctx, `INSERT INTO accounts (name, nt_hash, enabled, pending)
-SELECT ?, ?, 1, 1 WHERE ? != ? COLLATE NOCASE
-ON CONFLICT(name) DO NOTHING`, account.Name, account.Hash, account.Name, s.admin)
+VALUES (?, ?, 1, 1)
+ON CONFLICT(name) DO NOTHING`, account.Name, account.Hash)
 	if err != nil {
 		return err
 	}
 	changed, err := result.RowsAffected()
 	if err == nil && changed == 0 {
-		return errors.New("用户名已存在或保留给后台管理员")
+		return errors.New("VPN 用户名已存在")
 	}
 	return err
 }

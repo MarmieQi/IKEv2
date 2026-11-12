@@ -21,7 +21,7 @@ import (
 func TestManagedAccounts(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "manager.db")
-	db, err := store.Open(path, "admin")
+	db, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,13 +119,16 @@ func TestManagedAccounts(t *testing.T) {
 		t.Fatalf("invalid save or stale env changed saved settings: %+v, %v", saved, err)
 	}
 	for _, change := range []url.Values{
-		{"action": {"add"}, "username": {"new"}, "password": {"password"}},
-		{"action": {"reset"}, "username": {"new"}, "password": {"new-password"}},
+		{"action": {"add"}, "username": {"admin"}, "password": {"password"}},
+		{"action": {"reset"}, "username": {"admin"}, "password": {"new-password"}},
 		{"action": {"disable"}, "username": {"old"}},
 	} {
 		if response := send("POST", "/accounts", change, cookie); response.Code != 303 {
 			t.Fatalf("account action %s failed: %d", change.Get("action"), response.Code)
 		}
+	}
+	if response := send("GET", "/", nil, cookie); response.Code != 200 || !strings.Contains(response.Body.String(), `data-account="admin"`) {
+		t.Fatal("VPN account sharing the administrator name is missing from the dashboard")
 	}
 	old, err := db.Account(ctx, "old")
 	if err != nil || old.Enabled || old.Pending {
@@ -150,18 +153,18 @@ func TestManagedAccounts(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	db, err = store.Open(path, "admin")
+	db, err = store.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	account, err := db.Account(ctx, "new")
+	account, err := db.Account(ctx, "admin")
 	expected, _ := accounts.PasswordHash("new-password")
 	if err != nil || !account.Enabled || account.Pending || hex.EncodeToString(account.Hash) != hex.EncodeToString(expected) {
 		t.Fatal("new credentials did not survive reopening SQLite")
 	}
 	if err := db.Add(ctx, store.Account{Name: "ADMIN", Hash: expected}); err == nil {
-		t.Fatal("administrator name was accepted as a VPN account")
+		t.Fatal("duplicate VPN username was accepted")
 	}
 }
 

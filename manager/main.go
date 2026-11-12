@@ -58,7 +58,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	db, err := store.Open(database, admin)
+	db, err := store.Open(database)
 	if err != nil {
 		return fmt.Errorf("打开账号数据库: %w", err)
 	}
@@ -159,7 +159,7 @@ func serve(webServer *web.Server) error {
 }
 
 func preview(ctx context.Context) error {
-	db, err := store.Open(":memory:", "admin")
+	db, err := store.Open(":memory:")
 	if err != nil {
 		return err
 	}
